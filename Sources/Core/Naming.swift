@@ -68,9 +68,19 @@ struct NamingRule: Codable, Equatable {
             "{格式}": format == .folder ? "图片" : format.rawValue.uppercased(),
             "{日期}": date.string(from: Date()),
         ]
-        var s = values.reduce(normalizedTemplate) { $0.replacingOccurrences(of: $1.key, with: $1.value) }
+        // One pass over the template, so token-like text inside a title or file name stays literal.
+        let template = normalizedTemplate
+        let re = try! NSRegularExpression(pattern: "\\{(原名|标题|作者|序号|页数|格式|日期)\\}")
+        var s = "", last = template.startIndex
+        for m in re.matches(in: template, range: NSRange(template.startIndex..., in: template)) {
+            let r = Range(m.range, in: template)!
+            s += template[last..<r.lowerBound] + values[String(template[r])]!
+            last = r.upperBound
+        }
+        s += template[last...]
         s = Self.sanitize(s)
-        return s.isEmpty ? Self.sanitize(original) : s
+        if s.isEmpty { s = Self.sanitize(original) }
+        return s.isEmpty ? "未命名" : s
     }
 
     /// Makes a string safe as a macOS file name: no path separators or control characters, no leading

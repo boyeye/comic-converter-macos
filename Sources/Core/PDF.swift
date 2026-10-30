@@ -90,13 +90,24 @@ enum PDFComic {
         return images.count == 1 && !other ? images[0] : nil
     }
 
+    static let maxRenderPixels = 80_000_000.0
+
     private static func render(_ page: CGPDFPage, pixelWidth: Int?, dpi: Double, lossless: Bool) throws -> Data {
         var size = page.getBoxRect(.cropBox).size
         if page.rotationAngle % 180 != 0 { size = CGSize(width: size.height, height: size.width) }
-        guard size.width > 0, size.height > 0 else { throw ConvertError.invalid("PDF 页面尺寸为 0") }
+        guard size.width.isFinite, size.height.isFinite, size.width > 0, size.height > 0, size.width < 1e6, size.height < 1e6 else {
+            throw ConvertError.invalid("PDF 页面尺寸异常")
+        }
         var scale = pixelWidth.map { Double($0) / size.width } ?? dpi / 72
-        scale = min(scale, 12_000 / max(size.width, size.height))
-        let w = max(1, Int((size.width * scale).rounded())), h = max(1, Int((size.height * scale).rounded()))
+        // Cap the longest side and the total pixel count (80 MP ≈ 320 MB of RGBA) of the render buffer.
+        scale = min(scale, 12_000 / max(size.width, size.height), (maxRenderPixels / (size.width * size.height)).squareRoot())
+        guard scale.isFinite, scale > 0 else { throw ConvertError.invalid("PDF 渲染分辨率异常") }
+        var w = max(1, Int((size.width * scale).rounded())), h = max(1, Int((size.height * scale).rounded()))
+        if Double(w) * Double(h) > maxRenderPixels {
+            // Rounding up can overshoot the cap by a few pixels; shrink both sides until it holds.
+            let f = (maxRenderPixels / (Double(w) * Double(h))).squareRoot()
+            w = max(1, Int(Double(w) * f)); h = max(1, Int(Double(h) * f))
+        }
         guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0,
                                   space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else {
             throw ConvertError.tool("无法分配 \(w)×\(h) 渲染缓冲")

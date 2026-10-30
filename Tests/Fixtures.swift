@@ -54,6 +54,26 @@ struct Fixtures {
             let line = CTLineCreateWithAttributedString(NSAttributedString(string: "Vector page", attributes: [kCTFontAttributeName as NSAttributedString.Key: CTFontCreateWithName("Helvetica" as CFString, 48, nil)]))
             ctx.textPosition = CGPoint(x: 60, y: 400); CTLineDraw(line, ctx)
             ctx.endPDFPage(); ctx.closePDF()
+        case "bigpdf":
+            // A 200-inch square page: rendering it at 300 DPI would need a 3.6-gigapixel buffer.
+            var box = CGRect(x: 0, y: 0, width: 14_400, height: 14_400)
+            let ctx = CGContext(URL(fileURLWithPath: a[2]) as CFURL, mediaBox: &box, nil)!
+            ctx.beginPDFPage(nil)
+            ctx.setFillColor(CGColor(srgbRed: 0.9, green: 0.5, blue: 0.1, alpha: 1)); ctx.fill(box)
+            ctx.endPDFPage(); ctx.closePDF()
+        case "watchdog":
+            // watchdog <archive> <dir> <limitBytes>: the in-flight extraction limit, bypassing the declared-size precheck.
+            do {
+                try FileManager.default.createDirectory(at: URL(fileURLWithPath: a[3]), withIntermediateDirectories: true)
+                try Archive.extractWatched(URL(fileURLWithPath: a[2]), to: URL(fileURLWithPath: a[3]), limit: Int64(a[4])!)
+                print("extracted")
+            } catch { print("stopped: \(error.localizedDescription)") }
+        case "readcontained":
+            // readcontained <file> <root> <limit>
+            do {
+                let d = try readContainedData(URL(fileURLWithPath: a[2]), in: URL(fileURLWithPath: a[3]), limit: Int(a[4])!)
+                print("read \(d.count)")
+            } catch { print("refused: \(error.localizedDescription)") }
         case "inspect":
             let doc = CGPDFDocument(URL(fileURLWithPath: a[2]) as CFURL)!
             for n in 1...doc.numberOfPages {

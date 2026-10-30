@@ -96,6 +96,7 @@ struct CLI {
         options.format = format
         if let error = options.naming.regexError { fail(error) }
 
+        sweepStaleWorkDirectories()
         let files = Converter.expand(inputs, input: options.input)
         guard !files.isEmpty else { fail("没有找到可转换的漫画文件") }
         var failed = 0

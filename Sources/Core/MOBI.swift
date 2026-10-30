@@ -4,8 +4,21 @@ import Foundation
 enum MOBIComic {
     // MARK: Reading
 
+    /// Kindle tooling caps books at 650 MB; anything far beyond is not a book worth holding in memory.
+    static let maxFileBytes = 700 << 20
+    /// Decoded text across all records; real comics carry a few KB of HTML per page.
+    static let maxTextBytes = 64 << 20
+
+    static func load(_ url: URL) throws -> [UInt8] {
+        let h = try FileHandle(forReadingFrom: url)
+        defer { try? h.close() }
+        let data = try h.read(upToCount: maxFileBytes + 1) ?? Data()
+        guard data.count <= maxFileBytes else { throw ConvertError.invalid("文件超过 700 MB，不像是 MOBI 电子书") }
+        return [UInt8](data)
+    }
+
     static func read(_ url: URL, work: URL) throws -> Comic {
-        let bytes = [UInt8](try Data(contentsOf: url))
+        let bytes = try load(url)
         if bytes.has("CONT", at: 0) || bytes.starts(with: [0xEA] + Array("DRMION".utf8)) {
             throw ConvertError.unsupported("KFX 格式。请先用 Calibre 的 KFX Input 插件转成 AZW3 或 EPUB")
         }
@@ -37,8 +50,10 @@ enum MOBIComic {
                 comic.warnings.append("正文无法解码（\(error.localizedDescription)），已按图片记录顺序排列")
             }
         }
-        var seen = Set<Int>()
-        order = order.filter { image(db.record($0)) != nil && seen.insert($0).inserted }
+        // Drop only back-to-back repeats (a cover page showing page 1's image); a resource the text
+        // shows again later is a real page.
+        order = order.filter { image(db.record($0)) != nil }
+        order = order.enumerated().filter { $0.offset == 0 || order[$0.offset - 1] != $0.element }.map(\.element)
         if order.isEmpty {
             // No usable references: take every image record outside the text, in record order.
             let text = Set((1...max(1, first.textRecords)).map { $0 } + (base > 0 ? (base...base + section.textRecords).map { $0 } : []))
@@ -72,7 +87,7 @@ enum MOBIComic {
 
     /// A content-free structural summary, for diagnosing books that fail to convert.
     static func inspect(_ url: URL) throws -> String {
-        let bytes = [UInt8](try Data(contentsOf: url))
+        let bytes = try load(url)
         if bytes.has("CONT", at: 0) || bytes.starts(with: [0xEA] + Array("DRMION".utf8)) { return "KFX 容器（不支持）" }
         let db = try PalmDB(bytes)
         var lines = ["文件大小 \(bytes.count) 字节，PalmDB 类型 \(db.type)，记录数 \(db.count)"]
@@ -163,7 +178,8 @@ enum MOBIComic {
             var out: [UInt8] = []
             for i in stride(from: 1, through: textRecords, by: 1) {
                 let rec = trimTrailing(db.record(base + i))
-                out += compression == 2 ? palmDoc(rec) : rec
+                out += compression == 2 ? try palmDoc(rec) : rec
+                if out.count > MOBIComic.maxTextBytes { throw ConvertError.invalid("正文解压后超过 64 MB") }
             }
             return out
         }
@@ -188,7 +204,11 @@ enum MOBIComic {
         }
     }
 
-    static func palmDoc(_ input: [UInt8]) -> [UInt8] {
+    /// A PalmDOC record decodes to at most 4096 bytes; the generous cap stops crafted records from
+    /// ballooning memory.
+    static let maxRecordOutput = 64 << 10
+
+    static func palmDoc(_ input: [UInt8]) throws -> [UInt8] {
         var out: [UInt8] = []
         out.reserveCapacity(4096)
         var i = 0
@@ -208,6 +228,7 @@ enum MOBIComic {
             default:
                 out.append(c)
             }
+            if out.count > maxRecordOutput { throw ConvertError.invalid("正文记录解压后异常庞大") }
         }
         return out
     }
@@ -263,6 +284,9 @@ enum MOBIComic {
         r += block + name + [0, 0]
         r += [UInt8](repeating: 0, count: (4 - r.count % 4) % 4)
         records[0] = r
+
+        let total = records.reduce(78 + 8 * records.count + 2) { $0 + $1.count }
+        guard records.count <= 0xFFFF, total <= 0xFFFF_FFFF else { throw ConvertError.unsupported("MOBI 输出超过 65535 条记录或 4 GB") }
 
         var file = Array(comic.title.unicodeScalars.map { $0.isASCII && $0.value > 32 ? UInt8($0.value) : UInt8(ascii: "_") }.prefix(31))
         file += [UInt8](repeating: 0, count: 32 - file.count)

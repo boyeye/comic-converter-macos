@@ -22,6 +22,9 @@ struct ComicConverterApp: App {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func application(_ application: NSApplication, open urls: [URL]) { Model.shared.add(urls) }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        DispatchQueue.global(qos: .utility).async { sweepStaleWorkDirectories() }
+    }
 }
 
 struct BackdropView: View {

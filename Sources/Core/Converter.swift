@@ -180,9 +180,18 @@ enum Converter {
         let built = temp.appendingPathComponent(options.format == .folder ? base : "\(base).\(options.format.rawValue)")
         try write(&comic, format: options.format, to: built, work: work)
 
-        let dest = uniqueDestination(base: base, format: options.format, in: dir)
-        try FileManager.default.moveItem(at: built, to: dest)
-        return ConversionResult(output: dest, pages: comic.pages.count, warnings: comic.warnings)
+        // moveItem never replaces an existing item; if another process grabbed the name between the
+        // check and the move, pick the next free name.
+        for _ in 0..<100 {
+            let dest = uniqueDestination(base: base, format: options.format, in: dir)
+            do {
+                try FileManager.default.moveItem(at: built, to: dest)
+                return ConversionResult(output: dest, pages: comic.pages.count, warnings: comic.warnings)
+            } catch CocoaError.fileWriteFileExists {
+                continue
+            }
+        }
+        throw ConvertError.tool("无法在 \(dir.path) 中找到可用的输出文件名")
     }
 
     static func write(_ comic: inout Comic, format: OutputFormat, to out: URL, work: URL) throws {
@@ -214,7 +223,8 @@ enum Converter {
         let ext = format == .folder ? "" : ".\(format.rawValue)"
         var url = dir.appendingPathComponent(base + ext)
         var n = 1
-        while FileManager.default.fileExists(atPath: url.path) {
+        // attributesOfItem does not follow symlinks, so a dangling link also counts as taken.
+        while (try? FileManager.default.attributesOfItem(atPath: url.path)) != nil {
             url = dir.appendingPathComponent("\(base) (\(n))\(ext)")
             n += 1
         }

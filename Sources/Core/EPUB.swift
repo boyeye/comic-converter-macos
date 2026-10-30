@@ -3,18 +3,20 @@ import Foundation
 enum EPUBComic {
     // MARK: Reading
 
+    static let maxImageBytes = 256 << 20
+
     static func read(_ url: URL, work: URL) throws -> Comic {
         let root = work.appendingPathComponent("epub", isDirectory: true).standardizedFileURL
         try Archive.extract(url, to: root)
         let meta = root.appendingPathComponent("META-INF")
         if FileManager.default.fileExists(atPath: meta.appendingPathComponent("rights.xml").path) ||
-            ((try? String(contentsOf: meta.appendingPathComponent("encryption.xml"), encoding: .utf8)) ?? "").contains("xmlenc#aes") {
+            ((try? readContained(meta.appendingPathComponent("encryption.xml"), in: root)) ?? "").contains("xmlenc#aes") {
             throw ConvertError.drm("EPUB 内容已加密")
         }
-        guard let container = try? String(contentsOf: meta.appendingPathComponent("container.xml"), encoding: .utf8),
+        guard let container = try? readContained(meta.appendingPathComponent("container.xml"), in: root),
               let opfPath = matches("full-path\\s*=\\s*[\"']([^\"']+)[\"']", in: container).first,
-              let opfURL = resolve(opfPath, from: root, root: root),
-              let opfData = try? Data(contentsOf: opfURL) else { throw ConvertError.invalid("EPUB 缺少 OPF 清单") }
+              let opfURL = resolve(opfPath, from: root),
+              let opfData = try? readContainedData(opfURL, in: root, limit: 16 << 20) else { throw ConvertError.invalid("EPUB 缺少 OPF 清单") }
         let opf = OPFParser()
         let parser = XMLParser(data: opfData)
         parser.delegate = opf
@@ -24,42 +26,42 @@ enum EPUBComic {
         let opfDir = opfURL.deletingLastPathComponent()
         var comic = Comic(title: opf.title ?? url.deletingPathExtension().lastPathComponent, authors: opf.creators,
                           rightToLeft: opf.direction == "rtl")
-        var seen = Set<String>()
-        func add(_ u: URL?) {
-            guard let u, Images.extensions.contains(u.pathExtension.lowercased()) || Images.sniff(head(u)) != nil,
-                  seen.insert(u.path).inserted else { return }
-            comic.pages.append(u)
-        }
+        // Collect references first. Only back-to-back repeats are dropped (a cover page showing page 1's
+        // image); an image the book deliberately shows again later stays a page of its own.
+        var refs: [URL] = []
+        func add(_ u: URL?) { if let u, refs.last != u { refs.append(u) } }
         for id in opf.spine {
-            guard let item = opf.manifest[id], let file = resolve(item.href, from: opfDir, root: root) else { continue }
+            guard let item = opf.manifest[id], let file = resolve(item.href, from: opfDir) else { continue }
             if item.type.hasPrefix("image/") { add(file); continue }
-            guard let text = try? String(contentsOf: file, encoding: .utf8) else { continue }
-            let refs = matches("<(?:img|image)\\b[^>]*?\\s(?:src|xlink:href|href)\\s*=\\s*[\"']([^\"']+)[\"']", in: text)
-            refs.forEach { add(resolve(xmlUnescape($0), from: file.deletingLastPathComponent(), root: root)) }
+            guard let text = try? readContained(file, in: root) else { continue }
+            matches("<(?:img|image)\\b[^>]*?\\s(?:src|xlink:href|href)\\s*=\\s*[\"']([^\"']+)[\"']", in: text)
+                .forEach { add(resolve(xmlUnescape($0), from: file.deletingLastPathComponent())) }
         }
-        if comic.pages.isEmpty {
-            opf.order.compactMap { opf.manifest[$0] }.filter { $0.type.hasPrefix("image/") }
-                .forEach { add(resolve($0.href, from: opfDir, root: root)) }
-            if !comic.pages.isEmpty { comic.warnings.append("未能从正文确定页序，已按清单顺序排列图片") }
+        var fromManifest = false
+        if refs.isEmpty {
+            opf.order.compactMap { opf.manifest[$0] }.filter { $0.type.hasPrefix("image/") }.forEach { add(resolve($0.href, from: opfDir)) }
+            fromManifest = true
         }
+        // Each page is read once through the containment check and copied, so later steps only ever
+        // touch these copies.
+        let dir = work.appendingPathComponent("epub-pages", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        for ref in refs {
+            guard let data = try? readContainedData(ref, in: root, limit: maxImageBytes),
+                  let kind = Images.sniff([UInt8](data.prefix(16))) else { continue }
+            let page = dir.appendingPathComponent(String(format: "%05d.", comic.pages.count + 1) + kind)
+            try data.write(to: page)
+            comic.pages.append(page)
+        }
+        if fromManifest, !comic.pages.isEmpty { comic.warnings.append("未能从正文确定页序，已按清单顺序排列图片") }
         return comic
     }
 
-    private static func head(_ url: URL) -> [UInt8] {
-        guard let h = try? FileHandle(forReadingFrom: url) else { return [] }
-        defer { try? h.close() }
-        return [UInt8]((try? h.read(upToCount: 16)) ?? Data())
-    }
-
-    /// Resolves a relative href, refusing anything that escapes the extracted book or is a symlink.
-    private static func resolve(_ href: String, from dir: URL, root: URL) -> URL? {
+    /// Turns an href into a file URL; whether it may be read is decided when it is opened.
+    private static func resolve(_ href: String, from dir: URL) -> URL? {
         let path = String(href.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false)[0])
         guard !path.isEmpty, !path.contains("://"), let decoded = path.removingPercentEncoding else { return nil }
-        let url = URL(fileURLWithPath: decoded, relativeTo: dir).standardizedFileURL
-        guard url.path.hasPrefix(root.path + "/"),
-              let v = try? url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey]),
-              v.isRegularFile == true, v.isSymbolicLink != true else { return nil }
-        return url
+        return URL(fileURLWithPath: decoded, relativeTo: dir).standardizedFileURL
     }
 
     // MARK: Writing

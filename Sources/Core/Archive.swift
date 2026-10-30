@@ -5,17 +5,140 @@ import zlib
 enum Archive {
     static let bsdtar = "/usr/bin/tar"
 
+    static let maxEntries = 100_000
+    static let maxListingBytes = 64 << 20
+    /// Ceiling on bytes an archive may expand to. COMICCONV_MAX_EXPAND_MB can lower it, never raise it.
+    static var maxExpandedBytes: Int64 {
+        let ceiling: Int64 = 20 << 30
+        // Clamp in megabytes before converting, so an absurd value cannot overflow the shift.
+        let mb = ProcessInfo.processInfo.environment["COMICCONV_MAX_EXPAND_MB"].flatMap(Int64.init).map { min(max($0, 1), ceiling >> 20) }
+        return mb.map { $0 << 20 } ?? ceiling
+    }
+    static let minFreeBytes: Int64 = 1 << 30
+    /// Largest single page accepted from an archive.
+    static let maxPageBytes = 512 << 20
+
     static func extract(_ archive: URL, to dir: URL) throws {
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        // macOS bsdtar (libarchive) reads zip, rar/rar5, 7z and tar. Without -P it refuses absolute
-        // paths, ".." components and extraction through symlinks.
-        try runTool(bsdtar, ["-x", "-f", archive.path, "-C", dir.path], name: "解压")
+        let limit = maxExpandedBytes
+        let declared = try declaredSize(archive)
+        guard let free = freeSpace(dir) else { throw ConvertError.tool("无法查询磁盘剩余空间") }
+        guard declared <= limit else { throw ConvertError.invalid("压缩包解开后约 \(declared >> 20) MB，超过 \(limit >> 20) MB 上限") }
+        guard declared + minFreeBytes <= free else { throw ConvertError.invalid("磁盘剩余空间不足以解开压缩包（需要约 \(declared >> 20) MB）") }
+        try extractWatched(archive, to: dir, limit: limit)
+        try removeSymlinks(in: dir)
+    }
+
+    /// nil when the volume cannot be queried; callers refuse rather than assume space is unlimited.
+    static func freeSpace(_ dir: URL) -> Int64? {
+        try? dir.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]).volumeAvailableCapacityForImportantUsage
+    }
+
+    /// Sums the sizes the archive declares, streaming bsdtar's listing so an archive with millions of
+    /// entries is stopped early instead of buffered. Any line that cannot be parsed rejects the archive:
+    /// an entry of unknown size must not count as zero.
+    static func declaredSize(_ archive: URL) throws -> Int64 {
+        // bsdtar -tv --numeric-owner (LC_ALL=C): mode links uid gid SIZE Mon DD HH:MM|YYYY name. Numeric ids
+        // leave no free text before the size, so owner names cannot fake a size field.
+        let re = try! NSRegularExpression(pattern: "^\\S+\\s+\\d+\\s+\\d+\\s+\\d+\\s+(\\d+)\\s+[A-Z][a-z]{2}\\s+\\d{1,2}\\s+(?:\\d{1,2}:\\d{2}|\\d{4})\\s")
+        var entries = 0, total: Int64 = 0, failure: ConvertError?
+        try streamLines(bsdtar, ["-t", "-v", "--numeric-owner", "-f", archive.path], name: "读取压缩包目录", environment: ["LC_ALL": "C"],
+                        maxBytes: maxListingBytes) { line in
+            entries += 1
+            let ns = line as NSString
+            guard let m = re.firstMatch(in: line, range: NSRange(location: 0, length: ns.length)),
+                  let size = Int64(ns.substring(with: m.range(at: 1))) else {
+                failure = .invalid("无法识别压缩包目录中的条目：\(line.prefix(120))"); return false
+            }
+            // A crafted header can declare a size near Int64.max; overflow must reject, not trap.
+            let (sum, overflow) = total.addingReportingOverflow(size)
+            if overflow { failure = .invalid("压缩包声明的大小异常"); return false }
+            total = sum
+            if entries > maxEntries { failure = .invalid("压缩包内文件超过 \(maxEntries) 个"); return false }
+            if total > maxExpandedBytes { failure = .invalid("压缩包解开后超过 \(maxExpandedBytes >> 20) MB 上限"); return false }
+            return true
+        }
+        if let failure { throw failure }
+        return total
+    }
+
+    /// Runs the extraction while watching what it actually writes: the declared sizes are a promise the
+    /// archive makes, not one bsdtar enforces for every format. Exceeding `limit` bytes on disk, or
+    /// leaving less than 1 GB free, stops bsdtar and discards the partial output.
+    static func extractWatched(_ archive: URL, to dir: URL, limit: Int64) throws {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: bsdtar)
+        // Without -P bsdtar refuses absolute paths, ".." components, hard links leaving the target and
+        // extraction through symlinks.
+        p.arguments = ["-x", "-f", archive.path, "-C", dir.path]
+        let pipe = Pipe()
+        p.standardOutput = pipe; p.standardError = pipe; p.standardInput = FileHandle.nullDevice
+        try p.run()
+        let reader = drain(pipe)
+        // Free space is cheap to read, so it is checked every tick; walking the tree costs more and runs
+        // once a second. Both are checked again after bsdtar exits.
+        func check(walk: Bool) -> String? {
+            guard let free = freeSpace(dir) else { return "无法查询磁盘剩余空间" }
+            if free < minFreeBytes { return "解压时磁盘剩余空间低于 1 GB" }
+            guard walk else { return nil }
+            guard let used = usage(dir) else { return "无法统计解出的数据量" }
+            return used > limit ? "实际解出的数据超过 \(limit >> 20) MB 上限" : nil
+        }
+        var exceeded: String?, tick = 0
+        while p.isRunning {
+            Thread.sleep(forTimeInterval: 0.2)
+            tick += 1
+            exceeded = check(walk: tick % 5 == 0)
+            if exceeded != nil { p.terminate(); break }
+        }
+        p.waitUntilExit()
+        let output = reader()
+        if exceeded == nil { exceeded = check(walk: true) }
+        if let exceeded {
+            try? FileManager.default.removeItem(at: dir)
+            throw ConvertError.invalid(exceeded + "，已停止并删除解出的内容")
+        }
+        guard p.terminationStatus == 0 else {
+            let tail = String(decoding: output, as: UTF8.self).split(separator: "\n").suffix(3).joined(separator: " ")
+            throw ConvertError.tool("解压失败（退出码 \(p.terminationStatus)）：\(tail)")
+        }
+    }
+
+    /// The larger of logical size and disk allocation over the tree: sparse or compressed files allocate
+    /// little but read back huge. nil when any entry cannot be measured, so the caller fails closed.
+    static func usage(_ dir: URL) -> Int64? {
+        let keys: Set<URLResourceKey> = [.totalFileAllocatedSizeKey, .fileSizeKey, .isRegularFileKey]
+        var failed = false
+        guard let e = FileManager.default.enumerator(at: dir, includingPropertiesForKeys: Array(keys), errorHandler: { _, _ in failed = true; return true }) else { return nil }
+        var logical: Int64 = 0, allocated: Int64 = 0
+        for case let url as URL in e {
+            guard let v = try? url.resourceValues(forKeys: keys) else { return nil }
+            guard let regular = v.isRegularFile else { return nil }
+            guard regular else { continue }
+            guard let size = v.fileSize, let alloc = v.totalFileAllocatedSize else { return nil }
+            let (l, o1) = logical.addingReportingOverflow(Int64(size)), (a, o2) = allocated.addingReportingOverflow(Int64(alloc))
+            if o1 || o2 { return nil }
+            logical = l; allocated = a
+        }
+        return failed ? nil : max(logical, allocated)
+    }
+
+    /// Archives may carry symlinks pointing anywhere on disk; following one would copy a local file
+    /// into the output. Pages never need them, so every symlink is deleted before anything is read.
+    static func removeSymlinks(in dir: URL) throws {
+        guard let e = FileManager.default.enumerator(at: dir, includingPropertiesForKeys: [.isSymbolicLinkKey]) else { return }
+        for case let url as URL in e where (try? url.resourceValues(forKeys: [.isSymbolicLinkKey]))?.isSymbolicLink == true {
+            try FileManager.default.removeItem(at: url)
+        }
     }
 
     static func read(_ url: URL, work: URL) throws -> Comic {
         let dir = work.appendingPathComponent("archive", isDirectory: true)
         try extract(url, to: dir)
         var comic = Comic(title: url.deletingPathExtension().lastPathComponent, pages: Images.collect(in: dir))
+        if let big = comic.pages.first(where: { ((try? $0.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? Int.max) > maxPageBytes }) {
+            throw ConvertError.invalid("页面 \(big.lastPathComponent) 超过 \(maxPageBytes >> 20) MB，不像是漫画页")
+        }
         ComicInfo.read(from: dir, into: &comic)
         return comic
     }
@@ -82,8 +205,11 @@ final class ZipWriter {
     }
 
     func add(_ name: String, data: Data) throws {
-        guard data.count < 0xFFFF_FFFF, offset + data.count < 0xFFFF_FFFF, count < 0xFFFF else { throw ConvertError.unsupported("ZIP 输出超过 4 GB 或 65535 个文件") }
         let n = Array(name.utf8)
+        // Everything up to the start of the central directory must stay addressable with 32 bits.
+        guard count < 0xFFFF, offset + 30 + n.count + data.count < 0xFFFF_FFFF else {
+            throw ConvertError.unsupported("ZIP 输出超过 4 GB 或 65535 个文件")
+        }
         let crc = data.withUnsafeBytes { Int(crc32(0, $0.bindMemory(to: Bytef.self).baseAddress, uInt($0.count))) }
         var local: [UInt8] = []
         local.le32(0x0403_4b50); local.le16(20); local.le16(0x0800); local.le16(0); local.le16(time); local.le16(date)
@@ -99,6 +225,7 @@ final class ZipWriter {
     }
 
     func finish() throws {
+        guard central.count < 0xFFFF_FFFF else { throw ConvertError.unsupported("ZIP 目录超过 4 GB") }
         var end: [UInt8] = []
         end.le32(0x0605_4b50); end.le16(0); end.le16(0); end.le16(count); end.le16(count)
         end.le32(central.count); end.le32(offset); end.le16(0)
@@ -119,9 +246,11 @@ enum ComicInfo {
     }
 
     static func read(from dir: URL, into comic: inout Comic) {
+        // Several candidates: the shallowest one describes the whole book.
         guard let e = FileManager.default.enumerator(at: dir, includingPropertiesForKeys: nil),
-              let url = e.compactMap({ $0 as? URL }).first(where: { $0.lastPathComponent.lowercased() == "comicinfo.xml" }),
-              let text = try? String(contentsOf: url, encoding: .utf8) else { return }
+              let url = e.compactMap({ $0 as? URL }).filter({ $0.lastPathComponent.lowercased() == "comicinfo.xml" })
+                .min(by: { ($0.pathComponents.count, $0.path) < ($1.pathComponents.count, $1.path) }),
+              let text = try? readContained(url, in: dir, limit: 1 << 20) else { return }
         func tag(_ name: String) -> String? {
             matches("<\(name)>(.*?)</\(name)>", in: text).first.map { xmlUnescape($0).trimmingCharacters(in: .whitespacesAndNewlines) }.flatMap { $0.isEmpty ? nil : $0 }
         }
