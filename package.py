@@ -22,6 +22,7 @@ with tempfile.TemporaryDirectory(prefix='comic-dmg-') as tmp:
 命令行：应用内附带 comicconv，可在终端执行
   sudo ln -sf "/Applications/漫画格式转换.app/Contents/MacOS/comicconv" /usr/local/bin/comicconv
   comicconv -t cbz ~/Comics/
+  comicconv -t cbz --name "{{标题}} 第{{序号}}卷" ~/Comics/   # 转换时批量命名
   comicconv --inspect 某本书.mobi   # 转换失败时打印结构摘要，方便反馈
 
 不支持带 DRM 的文件与 KFX 格式。源文件不会被修改，同名输出自动加序号，不覆盖已有文件。

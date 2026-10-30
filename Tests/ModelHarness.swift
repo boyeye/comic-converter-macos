@@ -42,6 +42,35 @@ struct ModelHarness {
         check("只转换已勾选项（未勾选项保持等待）", states == ["waiting", "done", "done"])
         check("输出文件已生成", (try? FileManager.default.contentsOfDirectory(atPath: out.path).filter { $0.hasSuffix(".cbz") }.count) == 2)
 
+        // Batch naming: previews follow list order among ticked items; reordering renumbers.
+        m.remove(Set(m.items.map(\.id)))
+        m.add(["src.mobi", "src.cbz", "src.pdf"].map { dir.appendingPathComponent($0) })
+        m.format = .epub
+        check("默认命名不显示预览", m.previewNames().isEmpty)
+        m.naming.template = "第{序号}话 {原名}"
+        var p = m.previewNames()
+        check("预览按列表顺序编号", m.items.map { p[$0.id] ?? "" } == ["第01话 src.epub", "第02话 src.epub", "第03话 src.epub"])
+        m.setChecked([m.items[1].id], false)
+        p = m.previewNames()
+        check("未勾选项不占序号", p[m.items[2].id] == "第02话 src.epub" && p[m.items[1].id] == nil)
+        m.setChecked([m.items[1].id], true)
+        let last = m.items[2].id
+        m.move(from: [2], to: 0)
+        check("拖动调整顺序后重新编号", m.previewNames()[last] == "第01话 src.epub")
+        m.naming.template = "{标题}"
+        check("元数据变量在预览中显示占位", m.previewNames()[last] == "‹标题›.epub")
+        m.naming.template = "{原名}-{序号}"
+        m.start()
+        let until = Date().addingTimeInterval(60)
+        while m.items.contains(where: { if case .done = $0.state { return false }; if case .failed = $0.state { return false }; return true }) && Date() < until {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+        }
+        let names = m.items.compactMap { item -> String? in if case .done(let r) = item.state { return r.output.lastPathComponent }; return nil }
+        check("转换时按命名规则输出", names == ["src-01.epub", "src-02.epub", "src-03.epub"])
+        m.sortByName()
+        check("按名称排序", m.items.map(\.url.lastPathComponent) == ["src.cbz", "src.mobi", "src.pdf"])
+        m.naming = NamingRule()
+
         let a = Appearance.shared
         a.choice = "preset:sakura"
         check("浅色预设使用浅色外观", a.scheme == .light && a.preset?.name == "樱花粉")

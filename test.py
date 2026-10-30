@@ -244,6 +244,25 @@ with tempfile.TemporaryDirectory(prefix='comicconv-test-') as tmp:
     for line in r.stdout.splitlines():
         if line.startswith(('PASS ','FAIL ')): check('界面模型：'+line[5:],line.startswith('PASS'))
     check('界面模型测试正常结束',r.returncode==0 and 'MODEL OK' in r.stdout,r.stdout[-500:]+r.stderr[-500:])
+
+    # 11. Batch naming.
+    nm=T/'naming'; nm.mkdir()
+    r=conv('cbz',batch,out=nm,extra=['--name','{标题} 第{序号}卷'])
+    check('命名模板 + 自动两位序号',r.returncode==0 and sorted(p.name for p in nm.iterdir())==['src 第01卷.cbz','src 第02卷.cbz','src 第03卷.cbz'],str(sorted(p.name for p in nm.iterdir())))
+    messy=nm/'messy'; messy.mkdir()
+    shutil.copy(outs/'src.cbz',messy/'[某汉化组] 海贼王 (第1卷)【高清】.cbz')
+    r=conv('cbz',messy/'[某汉化组] 海贼王 (第1卷)【高清】.cbz',out=messy,extra=['--strip-brackets'])
+    check('去掉括号及其内容',(messy/'海贼王.cbz').exists(),str(list(messy.iterdir())))
+    r=conv('epub',messy/'[某汉化组] 海贼王 (第1卷)【高清】.cbz',out=messy,extra=['--regex','--find','.*\\(第(\\d+)卷\\).*','--replace','One Piece Vol.$1','--name','{原名} - {页数}P'])
+    check('正则查找替换 + {页数}',(messy/'One Piece Vol.1 - 12P.epub').exists(),r.stdout+str(list(messy.iterdir())))
+    r=conv('pdf',src,out=nm,extra=['--name','a/b:c {序号}','--start','5','--pad','3'])
+    check('非法字符替换、起始序号与位数',(nm/'a／b：c 005.pdf').exists(),r.stdout)
+    r=conv('pdf',src,out=nm,extra=['--name','a/b:c {序号}','--start','5','--pad','3'])
+    check('命名重复时自动编号',(nm/'a／b：c 005 (1).pdf').exists(),r.stdout)
+    r=conv('cbz',src,out=nm,extra=['--name','{作者}  -  {原名}'])
+    check('空作者留下的分隔符被清理',(nm/'src.cbz').exists(),r.stdout)
+    r=conv('cbz',src,out=nm,extra=['--regex','--find','(unclosed'])
+    check('无效正则在转换前报错',r.returncode==2 and '正则' in r.stderr,r.stderr)
     src_after=sorted(p.name for p in src.iterdir())
     check('源文件未被改动',src_after==sorted(p.name for p in order))
 

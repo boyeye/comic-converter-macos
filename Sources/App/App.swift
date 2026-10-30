@@ -100,6 +100,7 @@ struct ContentView: View {
     @ObservedObject var appearance: Appearance
     @State private var targeted = false
     @State private var showAppearance = false
+    @State private var showNaming = false
 
     var body: some View {
         VStack(spacing: 12) {
@@ -169,6 +170,17 @@ struct ContentView: View {
                 .labelsHidden().frame(width: 240, alignment: .leading)
             }
             GridRow {
+                Text("文件命名").foregroundStyle(.secondary)
+                HStack {
+                    Text(model.naming.isDefault ? "保持原名" : model.naming.template)
+                        .lineLimit(1).truncationMode(.middle)
+                        .foregroundStyle(model.naming.isDefault ? .secondary : .primary)
+                    Button("批量命名…") { showNaming = true }
+                    if !model.naming.isDefault { Button("恢复原名") { model.naming = NamingRule() } }
+                }
+                .sheet(isPresented: $showNaming) { NamingSheet(model: model) }
+            }
+            GridRow {
                 Text("保存位置").foregroundStyle(.secondary)
                 HStack {
                     Text(model.outputFolder?.path ?? "与源文件相同的文件夹")
@@ -205,11 +217,14 @@ struct ContentView: View {
             VStack(spacing: 0) {
                 listHeader.padding(.horizontal, 14).padding(.vertical, 8)
                 Divider()
+                let previews = model.previewNames()
                 List(selection: $model.selection) {
                     ForEach(model.items) { item in
-                        Row(item: item, checked: Binding(get: { item.checked }, set: { model.setChecked([item.id], $0) }))
+                        Row(item: item, preview: previews[item.id],
+                            checked: Binding(get: { item.checked }, set: { model.setChecked([item.id], $0) }))
                             .tag(item.id)
                     }
+                    .onMove { model.move(from: $0, to: $1) }
                 }
                 .scrollContentBackground(.hidden)
                 .contextMenu(forSelectionType: UUID.self) { ids in
@@ -234,8 +249,9 @@ struct ContentView: View {
                 Button("取消勾选") { model.setChecked(model.selection, false) }
                 Button("移除") { model.remove(model.selection) }.disabled(model.running)
             } else {
-                Text("⌘ / ⇧ 点击可多选").font(.callout).foregroundStyle(.secondary)
+                Text("⌘ / ⇧ 点击多选 · 拖动调整顺序").font(.callout).foregroundStyle(.secondary)
             }
+            Button("按名称排序") { model.sortByName() }.disabled(model.running)
         }
         .controlSize(.small)
     }
@@ -278,6 +294,7 @@ struct ContentView: View {
 
 private struct Row: View {
     let item: Model.Item
+    let preview: String?
     @Binding var checked: Bool
 
     var body: some View {
@@ -310,7 +327,9 @@ private struct Row: View {
 
     @ViewBuilder private var detail: some View {
         switch item.state {
-        case .waiting: Text(item.url.deletingLastPathComponent().path).foregroundStyle(.secondary)
+        case .waiting:
+            if let preview { Text("→ \(preview)").foregroundStyle(Color.accentColor) }
+            else { Text(item.url.deletingLastPathComponent().path).foregroundStyle(.secondary) }
         case .running: Text("正在转换…").foregroundStyle(.secondary)
         case .done(let r):
             VStack(alignment: .leading, spacing: 1) {
@@ -319,5 +338,104 @@ private struct Row: View {
             }
         case .failed(let message): Text(message).foregroundStyle(.red)
         }
+    }
+}
+
+// MARK: - Batch naming
+
+struct NamingSheet: View {
+    @ObservedObject var model: Model
+    @Environment(\.dismiss) private var dismiss
+
+    private static let presets: [(String, String)] = [
+        ("保持原名", "{原名}"),
+        ("书内标题", "{标题}"),
+        ("作者 - 标题", "{作者} - {标题}"),
+        ("标题 第N卷", "{标题} 第{序号}卷"),
+        ("序号 原名", "{序号} {原名}"),
+        ("原名 [页数P]", "{原名} [{页数}P]"),
+    ]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("批量命名").font(.title2.bold())
+            Text("转换时按下面的规则命名输出文件。序号按列表中已勾选文件的顺序编号，拖动列表即可调整顺序。")
+                .font(.callout).foregroundStyle(.secondary)
+
+            GroupBox("命名模板") {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        TextField("{原名}", text: $model.naming.template).textFieldStyle(.roundedBorder)
+                        Menu("常用模板") {
+                            ForEach(Self.presets, id: \.1) { p in Button("\(p.0)　\(p.1)") { model.naming.template = p.1 } }
+                        }
+                        .fixedSize()
+                    }
+                    HStack(spacing: 6) {
+                        Text("插入：").font(.caption).foregroundStyle(.secondary)
+                        ForEach(NamingRule.tokens, id: \.token) { t in
+                            Button(t.token) { model.naming.template += t.token }
+                                .controlSize(.small).help(t.help)
+                        }
+                    }
+                    HStack(spacing: 16) {
+                        Stepper("起始序号 \(model.naming.start)", value: $model.naming.start, in: 0...99_999)
+                        Picker("序号位数", selection: $model.naming.padding) {
+                            Text("自动").tag(0)
+                            ForEach(1...4, id: \.self) { Text("\($0) 位").tag($0) }
+                        }
+                        .fixedSize()
+                    }
+                }
+                .padding(6)
+            }
+
+            GroupBox("清理原名和标题") {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        TextField("查找", text: $model.naming.find).textFieldStyle(.roundedBorder)
+                        Image(systemName: "arrow.right").foregroundStyle(.secondary)
+                        TextField("替换为（可留空）", text: $model.naming.replace).textFieldStyle(.roundedBorder)
+                        Toggle("正则", isOn: $model.naming.useRegex)
+                    }
+                    if let error = model.naming.regexError { Text(error).font(.caption).foregroundStyle(.red) }
+                    Toggle("去掉【】[]（）() 括号及其中内容（如汉化组、来源标记）", isOn: $model.naming.stripBrackets)
+                }
+                .padding(6)
+            }
+
+            GroupBox("预览") {
+                VStack(alignment: .leading, spacing: 4) {
+                    let previews = model.previewNames()
+                    let shown = model.items.filter(\.checked).prefix(6)
+                    if shown.isEmpty {
+                        Text("列表中还没有勾选的文件").foregroundStyle(.secondary)
+                    }
+                    ForEach(Array(shown)) { item in
+                        HStack(spacing: 6) {
+                            Text(item.url.lastPathComponent).lineLimit(1).truncationMode(.middle).foregroundStyle(.secondary)
+                            Image(systemName: "arrow.right").font(.caption).foregroundStyle(.secondary)
+                            Text(previews[item.id] ?? item.url.deletingPathExtension().lastPathComponent + (model.format == .folder ? "" : ".\(model.format.rawValue)"))
+                                .lineLimit(1).truncationMode(.middle)
+                        }
+                        .font(.callout)
+                    }
+                    if model.naming.template.contains("{标题}") || model.naming.template.contains("{作者}") || model.naming.template.contains("{页数}") {
+                        Text("‹标题›‹作者›‹页数› 在转换时从书中读取后填入；书中没有作者时该项为空。")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(6)
+            }
+
+            HStack {
+                Button("恢复原名") { model.naming = NamingRule() }
+                Spacer()
+                Button("完成") { dismiss() }.keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(20)
+        .frame(width: 640)
     }
 }

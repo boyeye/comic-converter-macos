@@ -101,6 +101,7 @@ struct ConversionOptions {
     var direction: ReadingDirection = .auto
     /// Resolution for PDF pages that are not a single embedded image.
     var dpi: Double = 300
+    var naming = NamingRule()
 }
 
 struct ConversionResult {
@@ -163,7 +164,8 @@ enum Converter {
         }
     }
 
-    static func convert(_ input: URL, options: ConversionOptions) throws -> ConversionResult {
+    /// `index` and `total` place the file in its batch for the {序号} naming token.
+    static func convert(_ input: URL, options: ConversionOptions, index: Int = 0, total: Int = 1) throws -> ConversionResult {
         let work = try makeWorkDirectory()
         defer { try? FileManager.default.removeItem(at: work) }
         var comic = try read(input, work: work, options: options)
@@ -171,7 +173,8 @@ enum Converter {
         if options.direction != .auto { comic.rightToLeft = options.direction == .rtl }
 
         let dir = options.outputDirectory ?? input.deletingLastPathComponent()
-        let base = isDirectory(input) ? input.lastPathComponent : input.deletingPathExtension().lastPathComponent
+        let original = isDirectory(input) ? input.lastPathComponent : input.deletingPathExtension().lastPathComponent
+        let base = options.naming.name(original: original, index: index, total: total, comic: comic, format: options.format)
         let temp = work.appendingPathComponent("output", isDirectory: true)
         try FileManager.default.createDirectory(at: temp, withIntermediateDirectories: true)
         let built = temp.appendingPathComponent(options.format == .folder ? base : "\(base).\(options.format.rawValue)")

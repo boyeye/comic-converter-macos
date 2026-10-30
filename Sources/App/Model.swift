@@ -35,9 +35,13 @@ final class Model: ObservableObject {
     @Published var input = InputFormat.auto { didSet { applyInputFilter() } }
     @Published var direction = ReadingDirection.auto
     @Published var outputFolder: URL?
+    @Published var naming: NamingRule {
+        didSet { UserDefaults.standard.set(try? JSONEncoder().encode(naming), forKey: "naming") }
+    }
 
     init() {
         format = UserDefaults.standard.string(forKey: "format").flatMap(OutputFormat.init) ?? .cbz
+        naming = UserDefaults.standard.data(forKey: "naming").flatMap { try? JSONDecoder().decode(NamingRule.self, from: $0) } ?? NamingRule()
     }
 
     func add(_ urls: [URL]) {
@@ -87,21 +91,46 @@ final class Model: ObservableObject {
         selection.subtract(ids)
     }
 
+    /// {序号} follows list order among ticked items, so reordering the list renumbers the batch.
+    private var checkedOrder: [UUID: Int] {
+        Dictionary(uniqueKeysWithValues: items.filter(\.checked).enumerated().map { ($1.id, $0) })
+    }
+
+    /// Output name preview, or nil when names are kept as they are.
+    func previewNames() -> [UUID: String] {
+        guard !naming.isDefault else { return [:] }
+        let order = checkedOrder, total = order.count
+        let ext = format == .folder ? "" : ".\(format.rawValue)"
+        return order.reduce(into: [:]) { result, entry in
+            guard let item = items.first(where: { $0.id == entry.key }) else { return }
+            let original = item.detected == .folder ? item.url.lastPathComponent : item.url.deletingPathExtension().lastPathComponent
+            result[entry.key] = naming.name(original: original, index: entry.value, total: total, comic: nil, format: format) + ext
+        }
+    }
+
+    func move(from source: IndexSet, to destination: Int) { items.move(fromOffsets: source, toOffset: destination) }
+
+    func sortByName() {
+        items.sort { $0.url.lastPathComponent.localizedStandardCompare($1.url.lastPathComponent) == .orderedAscending }
+    }
+
     /// Converts every ticked item that has not already succeeded, one at a time, off the main thread.
     func start() {
+        let order = checkedOrder, total = order.count
         let pending = items.filter { item in
             if case .done = item.state { return false }
             return item.checked
         }.map(\.id)
-        guard !pending.isEmpty, !running else { return }
+        guard !pending.isEmpty, !running, naming.regexError == nil else { return }
         running = true
-        let options = ConversionOptions(format: format, input: input, outputDirectory: outputFolder, direction: direction)
+        var options = ConversionOptions(format: format, input: input, outputDirectory: outputFolder, direction: direction)
+        options.naming = naming
         DispatchQueue.global(qos: .userInitiated).async {
             for id in pending {
                 guard let url = DispatchQueue.main.sync(execute: { self.items.first { $0.id == id }?.url }) else { continue }
                 DispatchQueue.main.sync { self.update(id, .running) }
                 let state: State
-                do { state = .done(try Converter.convert(url, options: options)) } catch { state = .failed(error.localizedDescription) }
+                do { state = .done(try Converter.convert(url, options: options, index: order[id] ?? 0, total: total)) } catch { state = .failed(error.localizedDescription) }
                 DispatchQueue.main.sync { self.update(id, state) }
             }
             DispatchQueue.main.async { self.running = false }
