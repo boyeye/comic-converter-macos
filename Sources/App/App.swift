@@ -8,8 +8,8 @@ struct ComicConverterApp: App {
 
     var body: some Scene {
         WindowGroup("漫画格式转换") {
-            ContentView(model: Model.shared)
-                .frame(minWidth: 640, minHeight: 420)
+            ContentView(model: Model.shared, appearance: Appearance.shared)
+                .frame(minWidth: 720, minHeight: 500)
         }
         .commands {
             CommandGroup(replacing: .newItem) {
@@ -24,87 +24,92 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 }
 
-final class Model: ObservableObject {
-    static let shared = Model()
+struct BackdropView: View {
+    @ObservedObject var appearance: Appearance
 
-    enum State {
-        case waiting, running
-        case done(ConversionResult)
-        case failed(String)
-    }
-
-    struct Item: Identifiable {
-        let id = UUID()
-        let url: URL
-        var state = State.waiting
-    }
-
-    @Published var items: [Item] = []
-    @Published var running = false
-    @Published var format: OutputFormat { didSet { UserDefaults.standard.set(format.rawValue, forKey: "format") } }
-    @Published var direction = ReadingDirection.auto
-    @Published var outputFolder: URL?
-
-    init() {
-        format = UserDefaults.standard.string(forKey: "format").flatMap(OutputFormat.init) ?? .cbz
-    }
-
-    func add(_ urls: [URL]) {
-        let known = Set(items.map(\.url))
-        items += Converter.expand(urls).filter { !known.contains($0) }.map { Item(url: $0) }
-    }
-
-    func choose() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = true
-        panel.canChooseDirectories = true
-        panel.allowsMultipleSelection = true
-        panel.message = "选择漫画文件，或包含漫画文件 / 图片的文件夹"
-        if panel.runModal() == .OK { add(panel.urls) }
-    }
-
-    func chooseOutput() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.canCreateDirectories = true
-        panel.prompt = "选择"
-        if panel.runModal() == .OK { outputFolder = panel.url }
-    }
-
-    func start() {
-        let pending = items.filter { if case .done = $0.state { return false }; return true }.map(\.id)
-        guard !pending.isEmpty, !running else { return }
-        running = true
-        let options = ConversionOptions(format: format, outputDirectory: outputFolder, direction: direction)
-        DispatchQueue.global(qos: .userInitiated).async {
-            for id in pending {
-                guard let url = DispatchQueue.main.sync(execute: { self.items.first { $0.id == id }?.url }) else { continue }
-                DispatchQueue.main.sync { self.update(id, .running) }
-                let state: State
-                do { state = .done(try Converter.convert(url, options: options)) } catch { state = .failed(error.localizedDescription) }
-                DispatchQueue.main.sync { self.update(id, state) }
+    var body: some View {
+        if let preset = appearance.preset {
+            swatch(preset.colors)
+        } else if let color = appearance.customColor {
+            color
+        } else if appearance.choice == "image", let image = appearance.image {
+            GeometryReader { geo in
+                Image(nsImage: image).resizable().scaledToFill().frame(width: geo.size.width, height: geo.size.height).clipped()
             }
-            DispatchQueue.main.async { self.running = false }
+        } else {
+            Color(nsColor: .windowBackgroundColor)
         }
     }
 
-    private func update(_ id: UUID, _ state: State) {
-        if let i = items.firstIndex(where: { $0.id == id }) { items[i].state = state }
+    @ViewBuilder func swatch(_ hexes: [String]) -> some View {
+        let colors = hexes.compactMap { Color(hex: $0) }
+        if colors.count == 1 { colors[0] } else { LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing) }
+    }
+}
+
+struct AppearancePicker: View {
+    @ObservedObject var appearance: Appearance
+    @State private var custom = Color(hex: "#7FB3D5")!
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("背景").font(.headline)
+            LazyVGrid(columns: Array(repeating: GridItem(.fixed(64), spacing: 10), count: 4), spacing: 12) {
+                tile(name: "跟随系统", selected: appearance.choice == "system") {
+                    Color(nsColor: .windowBackgroundColor).overlay(Image(systemName: "circle.lefthalf.filled").foregroundStyle(.secondary))
+                } action: { appearance.choice = "system" }
+                ForEach(Backdrop.presets) { p in
+                    tile(name: p.name, selected: appearance.choice == "preset:" + p.id) {
+                        BackdropView(appearance: appearance).swatch(p.colors)
+                    } action: { appearance.choice = "preset:" + p.id }
+                }
+            }
+            Divider()
+            HStack {
+                ColorPicker("自定义颜色", selection: $custom, supportsOpacity: false)
+                    .onChange(of: custom) { appearance.setColor($0) }
+                Spacer()
+                Button("选择图片…") { appearance.pickImage() }
+            }
+            if appearance.choice == "image" {
+                Text("当前使用自定义图片").font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .padding(16)
+        .frame(width: 330)
     }
 
-    func clearFinished() { items.removeAll { if case .done = $0.state { return true }; return false } }
+    private func tile<V: View>(name: String, selected: Bool, @ViewBuilder content: () -> V, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 4) {
+                content()
+                    .frame(width: 44, height: 44)
+                    .clipShape(Circle())
+                    .overlay(Circle().stroke(selected ? Color.accentColor : Color.primary.opacity(0.15), lineWidth: selected ? 3 : 1))
+                Text(name).font(.caption2).lineLimit(1)
+            }
+        }
+        .buttonStyle(.plain)
+    }
 }
+
+// MARK: - Main window
 
 struct ContentView: View {
     @ObservedObject var model: Model
+    @ObservedObject var appearance: Appearance
     @State private var targeted = false
+    @State private var showAppearance = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            settings.frame(maxWidth: .infinity, alignment: .leading).padding(14)
-            Divider()
+        VStack(spacing: 12) {
+            settings
+                .padding(14)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
             list
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                .clipShape(RoundedRectangle(cornerRadius: 12))
                 .onDrop(of: [.fileURL], isTargeted: $targeted) { providers in
                     for p in providers {
                         _ = p.loadObject(ofClass: URL.self) { url, _ in
@@ -113,26 +118,55 @@ struct ContentView: View {
                     }
                     return true
                 }
-            Divider()
-            footer.padding(12)
+            footer
+                .padding(.horizontal, 12).padding(.vertical, 10)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+        }
+        .padding(14)
+        .background(BackdropView(appearance: appearance).ignoresSafeArea())
+        .preferredColorScheme(appearance.scheme)
+        .toolbar {
+            ToolbarItem {
+                Button { showAppearance.toggle() } label: { Label("背景", systemImage: "paintpalette") }
+                    .help("更换背景颜色或图片")
+                    .popover(isPresented: $showAppearance, arrowEdge: .bottom) { AppearancePicker(appearance: appearance) }
+            }
         }
     }
 
     private var settings: some View {
         Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 10) {
             GridRow {
-                Text("输出格式").foregroundStyle(.secondary)
-                Picker("", selection: $model.format) {
-                    ForEach(OutputFormat.allCases) { Text($0.label).tag($0) }
+                Text("输入格式").foregroundStyle(.secondary)
+                Picker("", selection: $model.input) {
+                    ForEach(InputFormat.allCases) { Text($0.label).tag($0) }
                 }
-                .labelsHidden().frame(maxWidth: 260, alignment: .leading)
+                .labelsHidden().frame(width: 240, alignment: .leading)
+            }
+            GridRow {
+                Text("输出格式").foregroundStyle(.secondary)
+                HStack(spacing: 10) {
+                    Picker("", selection: $model.format) {
+                        Section("漫画包") { ForEach(OutputFormat.comicArchives) { Text($0.label).tag($0) } }
+                        Section("电子书") { ForEach(OutputFormat.ebooks) { Text($0.label).tag($0) } }
+                        Section("其他") { Text(OutputFormat.folder.label).tag(OutputFormat.folder) }
+                    }
+                    .labelsHidden().frame(width: 240, alignment: .leading)
+                    Text(model.format.summary).font(.callout).foregroundStyle(.secondary).lineLimit(2)
+                }
+            }
+            if let hint {
+                GridRow {
+                    Color.clear.frame(width: 1, height: 1)
+                    Label(hint, systemImage: "exclamationmark.triangle").font(.callout).foregroundStyle(.orange)
+                }
             }
             GridRow {
                 Text("阅读方向").foregroundStyle(.secondary)
                 Picker("", selection: $model.direction) {
                     ForEach(ReadingDirection.allCases) { Text($0.label).tag($0) }
                 }
-                .labelsHidden().frame(maxWidth: 260, alignment: .leading)
+                .labelsHidden().frame(width: 240, alignment: .leading)
             }
             GridRow {
                 Text("保存位置").foregroundStyle(.secondary)
@@ -144,20 +178,15 @@ struct ContentView: View {
                     if model.outputFolder != nil { Button("恢复默认") { model.outputFolder = nil } }
                 }
             }
-            if let hint {
-                GridRow {
-                    Color.clear.frame(width: 1, height: 1)
-                    Label(hint, systemImage: "info.circle").font(.callout).foregroundStyle(.orange)
-                }
-            }
         }
         .disabled(model.running)
     }
 
+    /// Only shown when the chosen output cannot be produced on this Mac.
     private var hint: String? {
         switch model.format {
-        case .azw3 where Calibre.ebookConvert == nil: return "未检测到 Calibre，无法输出 AZW3。请先安装 calibre-ebook.com"
-        case .mobi: return "MOBI 是 Kindle 旧格式；新款 Kindle 建议用 EPUB（通过 Send to Kindle）或 AZW3"
+        case .azw3 where Tools.ebookConvert == nil: return "未检测到 Calibre，无法输出 AZW3。请先从 calibre-ebook.com 安装"
+        case .cbr where Tools.rar == nil: return "未检测到 rar 命令，无法输出 CBR。可在终端执行：brew install --cask rar"
         default: return nil
         }
     }
@@ -167,23 +196,63 @@ struct ContentView: View {
             VStack(spacing: 10) {
                 Image(systemName: "books.vertical").font(.system(size: 44)).foregroundStyle(.secondary)
                 Text("把漫画文件或文件夹拖到这里").font(.title3)
-                Text("CBZ · CBR · CB7 · CBT · PDF · EPUB · MOBI · AZW3 · 图片文件夹").font(.callout).foregroundStyle(.secondary)
+                Text("可读取：CBZ · CBR · CB7 · CBT · PDF · EPUB · MOBI · AZW3 · 图片文件夹").font(.callout).foregroundStyle(.secondary)
                 Button("添加文件…") { model.choose() }.padding(.top, 4)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(targeted ? Color.accentColor.opacity(0.12) : Color.clear)
+            .background(targeted ? Color.accentColor.opacity(0.15) : Color.clear)
         } else {
-            List(model.items) { item in
-                Row(item: item)
-                    .contextMenu {
-                        if case .done(let r) = item.state {
-                            Button("在 Finder 中显示结果") { NSWorkspace.shared.activateFileViewerSelecting([r.output]) }
-                        }
-                        Button("在 Finder 中显示源文件") { NSWorkspace.shared.activateFileViewerSelecting([item.url]) }
-                        Button("移除") { model.items.removeAll { $0.id == item.id } }.disabled(model.running)
+            VStack(spacing: 0) {
+                listHeader.padding(.horizontal, 14).padding(.vertical, 8)
+                Divider()
+                List(selection: $model.selection) {
+                    ForEach(model.items) { item in
+                        Row(item: item, checked: Binding(get: { item.checked }, set: { model.setChecked([item.id], $0) }))
+                            .tag(item.id)
                     }
+                }
+                .scrollContentBackground(.hidden)
+                .contextMenu(forSelectionType: UUID.self) { ids in
+                    contextMenu(for: ids)
+                }
             }
-            .overlay(targeted ? RoundedRectangle(cornerRadius: 6).stroke(Color.accentColor, lineWidth: 3) : nil)
+            .overlay(targeted ? RoundedRectangle(cornerRadius: 12).stroke(Color.accentColor, lineWidth: 3) : nil)
+        }
+    }
+
+    private var listHeader: some View {
+        let all = model.checkedCount == model.items.count
+        return HStack(spacing: 10) {
+            Toggle("", isOn: Binding(get: { all }, set: { model.setChecked(Set(model.items.map(\.id)), $0) }))
+                .toggleStyle(.checkbox).labelsHidden()
+                .help(all ? "全部取消勾选" : "全部勾选")
+            Text("已勾选 \(model.checkedCount) / \(model.items.count)").font(.callout)
+            Spacer()
+            if !model.selection.isEmpty {
+                Text("已选中 \(model.selection.count) 项").font(.callout).foregroundStyle(.secondary)
+                Button("勾选") { model.setChecked(model.selection, true) }
+                Button("取消勾选") { model.setChecked(model.selection, false) }
+                Button("移除") { model.remove(model.selection) }.disabled(model.running)
+            } else {
+                Text("⌘ / ⇧ 点击可多选").font(.callout).foregroundStyle(.secondary)
+            }
+        }
+        .controlSize(.small)
+    }
+
+    @ViewBuilder private func contextMenu(for ids: Set<UUID>) -> some View {
+        if !ids.isEmpty {
+            Button("勾选") { model.setChecked(ids, true) }
+            Button("取消勾选") { model.setChecked(ids, false) }
+            Divider()
+            if ids.count == 1, let item = model.items.first(where: { ids.contains($0.id) }) {
+                if case .done(let r) = item.state {
+                    Button("在 Finder 中显示结果") { NSWorkspace.shared.activateFileViewerSelecting([r.output]) }
+                }
+                Button("在 Finder 中显示源文件") { NSWorkspace.shared.activateFileViewerSelecting([item.url]) }
+                Divider()
+            }
+            Button("移除 \(ids.count) 项") { model.remove(ids) }.disabled(model.running)
         }
     }
 
@@ -191,33 +260,41 @@ struct ContentView: View {
         HStack {
             Button("添加…") { model.choose() }
             Button("清除已完成") { model.clearFinished() }.disabled(model.running)
-            Button("清空") { model.items.removeAll() }.disabled(model.running || model.items.isEmpty)
+            Button("清空") { model.remove(Set(model.items.map(\.id))) }.disabled(model.running || model.items.isEmpty)
             Spacer()
             Text(summary).foregroundStyle(.secondary).font(.callout)
-            Button(model.running ? "转换中…" : "开始转换") { model.start() }
+            Button(model.running ? "转换中…" : "转换已勾选（\(model.checkedCount)）") { model.start() }
                 .keyboardShortcut(.defaultAction)
-                .disabled(model.running || model.items.isEmpty)
+                .disabled(model.running || model.checkedCount == 0)
         }
     }
 
     private var summary: String {
         let done = model.items.filter { if case .done = $0.state { return true }; return false }.count
         let failed = model.items.filter { if case .failed = $0.state { return true }; return false }.count
-        return model.items.isEmpty ? "" : "共 \(model.items.count) 项 · 完成 \(done)" + (failed > 0 ? " · 失败 \(failed)" : "")
+        return model.items.isEmpty ? "" : "完成 \(done)" + (failed > 0 ? " · 失败 \(failed)" : "")
     }
 }
 
 private struct Row: View {
     let item: Model.Item
+    @Binding var checked: Bool
 
     var body: some View {
         HStack(spacing: 10) {
+            Toggle("", isOn: $checked).toggleStyle(.checkbox).labelsHidden()
             icon.frame(width: 18)
             VStack(alignment: .leading, spacing: 2) {
-                Text(item.url.lastPathComponent).lineLimit(1).truncationMode(.middle)
+                HStack(spacing: 6) {
+                    Text(item.url.lastPathComponent).lineLimit(1).truncationMode(.middle)
+                    Text(item.badge)
+                        .font(.caption2).padding(.horizontal, 5).padding(.vertical, 1)
+                        .background(Color.secondary.opacity(0.18), in: RoundedRectangle(cornerRadius: 4))
+                }
                 detail.font(.caption).lineLimit(2)
             }
         }
+        .opacity(checked ? 1 : 0.55)
         .padding(.vertical, 3)
     }
 

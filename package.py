@@ -17,11 +17,12 @@ with tempfile.TemporaryDirectory(prefix='comic-dmg-') as tmp:
 未使用付费 Developer ID 签名，未经 Apple 公证；若首次启动被拦截，在尝试打开后前往「系统设置 → 隐私与安全性 → 仍要打开」。
 
 读取：CBZ/ZIP、CBR/RAR、CB7/7Z、CBT/TAR、PDF、EPUB、MOBI、AZW3、AZW、PRC、图片文件夹
-输出：CBZ、CB7、CBT、PDF、EPUB（固定版式）、MOBI、AZW3（需安装 Calibre）、图片文件夹
+输出：CBZ、CBR（需安装 rar）、CB7、CBT、PDF、EPUB（固定版式）、MOBI、AZW3（需安装 Calibre）、图片文件夹
 
 命令行：应用内附带 comicconv，可在终端执行
   sudo ln -sf "/Applications/漫画格式转换.app/Contents/MacOS/comicconv" /usr/local/bin/comicconv
   comicconv -t cbz ~/Comics/
+  comicconv --inspect 某本书.mobi   # 转换失败时打印结构摘要，方便反馈
 
 不支持带 DRM 的文件与 KFX 格式。源文件不会被修改，同名输出自动加序号，不覆盖已有文件。
 ''')

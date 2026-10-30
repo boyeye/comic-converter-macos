@@ -48,6 +48,13 @@ enum Archive {
         try runTool(bsdtar, ["--format", format, "-c", "-f", out.path, "-C", dir.path] + names, name: "打包")
     }
 
+    static func writeRar(_ comic: Comic, rar: String, to out: URL, work: URL) throws {
+        let dir = work.appendingPathComponent("stage", isDirectory: true)
+        let names = try stage(comic, in: dir, comicInfo: true)
+        // a: add, -m0: store (pages are already compressed), -ep1: drop the staging path, -idq: quiet.
+        try runTool(rar, ["a", "-m0", "-ep1", "-idq", out.path] + names.map { dir.appendingPathComponent($0).path }, name: "RAR 打包")
+    }
+
     static func writeZip(_ comic: Comic, to out: URL) throws {
         let zip = try ZipWriter(url: out)
         for (i, page) in comic.pages.enumerated() {

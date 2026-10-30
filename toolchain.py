@@ -2,8 +2,8 @@
 from pathlib import Path
 import os,re,subprocess
 ROOT=Path(__file__).resolve().parent
-VERSION='1.0.0'
-BUILD='1'
+VERSION='1.1.0'
+BUILD='2'
 CORE=sorted((ROOT/'Sources/Core').glob('*.swift'))
 
 def sdk_path():

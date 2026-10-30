@@ -8,20 +8,23 @@
 - **无损优先**：JPEG/PNG 页面原样复制，不重新压缩。PDF 的 JPEG 页以 DCTDecode 直接嵌入，读出时也直接拷贝
 - **页序准确**：MOBI/AZW3 按正文中图片引用的顺序（`recindex` / `kindle:embed`）排列，EPUB 按 spine 顺序排列，压缩包和文件夹按 Finder 的自然排序（`page2` 排在 `page10` 之前）
 - **阅读方向**：日漫从右到左的设置可在 CBZ（ComicInfo.xml）、EPUB 和 MOBI 之间互相保留
+- **按内容识别格式**：根据文件头判断真实格式，扩展名写错也能正确转换；也可以手动指定输入格式，批量处理时只挑出该格式的文件
+- **勾选与多选**：每个文件都有复选框，只转换勾选的项目；按住 ⌘ 或 ⇧ 点击可多选，再批量勾选、取消勾选或移除
+- **背景外观**：工具栏的调色板按钮提供 11 种预设配色（薄荷绿、雾霾蓝、樱花粉、奶油白、莫兰迪灰、薰衣草、蜜桃渐变、日落渐变、极光渐变、午夜蓝、石墨灰），也支持自定义颜色或图片
 - **安全**：不修改源文件；遇到同名输出时自动加序号，不覆盖已有文件；解压时阻止路径穿越
 
 ## 格式支持
 
 | 格式 | 读取 | 写出 | 说明 |
 |---|:-:|:-:|---|
-| CBZ / ZIP | ✅ | ✅ | 附带 ComicInfo.xml（标题、作者、页数、阅读方向） |
-| CBR / RAR | ✅ | — | 支持 RAR4/RAR5 读取；RAR 是专有格式，无法写出 |
-| CB7 / 7Z | ✅ | ✅ | |
-| CBT / TAR | ✅ | ✅ | |
+| CBZ / ZIP | ✅ | ✅ | 推荐。ZIP 打包，附带 ComicInfo.xml（标题、作者、页数、阅读方向） |
+| CBR / RAR | ✅ | ✅* | 读取支持 RAR4/RAR5。*写出需要 RARLAB 的 `rar` 命令（`brew install --cask rar`），因为 RAR 是专有格式 |
+| CB7 / 7Z | ✅ | ✅ | 7z 打包，体积最小，但支持它的阅读器较少 |
+| CBT / TAR | ✅ | ✅ | TAR 打包、不压缩，很少使用，一般用不到 |
 | 图片文件夹 | ✅ | ✅ | 子文件夹视为章节，按自然顺序合并 |
 | PDF | ✅ | ✅ | 扫描版直接取出原图；文字或矢量页面按 DPI 渲染（默认 300） |
 | EPUB | ✅ | ✅ | 写出 EPUB 3 固定版式，并带 Kindle 漫画元数据 |
-| MOBI / AZW / PRC | ✅ | ✅ | 写出 MOBI 6；读取支持 MOBI 6、KF8，以及 MOBI 6 + KF8 联合格式 |
+| MOBI / AZW / PRC | ✅ | ✅ | 写出 MOBI 6；读取支持 MOBI 6、KF8、MOBI 6 + KF8 联合格式，以及 Kindlegen/KCC 生成的书 |
 | AZW3 | ✅ | ✅* | *写出时调用已安装的 Calibre |
 | KFX | — | — | 请先用 Calibre 的 KFX Input 插件转换 |
 | 任何带 DRM 的文件 | — | — | 会识别并明确拒绝 |
@@ -46,10 +49,16 @@ sudo ln -sf "/Applications/漫画格式转换.app/Contents/MacOS/comicconv" /usr
 comicconv -t cbz ~/Comics/mobi/                 # 批量把文件夹（含子文件夹）中的漫画转成 CBZ
 comicconv -t epub --rtl -o ~/Desktop 某漫画.cbz  # 输出 EPUB，强制从右到左，保存到桌面
 comicconv -t pdf --dpi 200 扫描本.pdf            # 重新渲染非图片页时使用 200 DPI
+comicconv -t cbz -f mobi ~/Downloads/            # 只转换其中的 MOBI/AZW3
+comicconv --inspect 某本书.mobi                  # 打印书的结构摘要（不含内容），方便反馈问题
 comicconv --help
 ```
 
 所有文件都转换成功时退出码为 0；有文件失败时为 1；参数错误时为 2。
+
+## 转换失败怎么办
+
+如果某本 MOBI/AZW3 转换失败，请运行 `comicconv --inspect 文件名` 并附上输出提交 issue。这条命令只打印文件结构（记录类型和数量、头部字段），不包含书的内容。
 
 ## 已知限制
 
@@ -57,6 +66,7 @@ comicconv --help
 - Kindle 商店的 HD 图片存放在单独的 `.azw.res` 文件中，本工具不读取，只使用书内自带的图片。
 - 正文采用 HUFF/CDIC 压缩的 MOBI 无法解析正文，此时会按图片记录的顺序排列页面，并给出提示。
 - 写出 PDF 时，页面尺寸等于图片的像素尺寸（1 像素 = 1 pt）。
+- CBR 输出依赖本机安装的 rar；自动化测试只用模拟的 rar 验证了调用参数和流程。
 
 ## 构建与测试
 
@@ -73,7 +83,9 @@ python3 package.py    # 打包成 dist/ComicConverter-<版本>-arm64.dmg 并验�
 - 用 Calibre 生成 MOBI 6、MOBI 6 + KF8 联合格式和 AZW3，作为第三方输入来测试读取；
 - 覆盖 DRM、KFX、路径穿越、同名不覆盖和批量转换等边界情况。
 
-源码结构：`Sources/Core` 是转换内核，图形界面与命令行共用；`Sources/App` 是 SwiftUI 界面；`Sources/CLI` 是命令行；`Tests/Fixtures.swift` 是测试样张生成器；`Assets/` 存放图标及其生成脚本。
+此外还会模拟 Kindlegen/KCC 的书结构（首个资源记录为 RESC），并在不启动界面的情况下测试界面模型：勾选、多选、按输入格式筛选、转换队列和背景配色。
+
+源码结构：`Sources/Core` 是转换内核，图形界面与命令行共用；`Sources/App` 是 SwiftUI 界面及其数据模型；`Sources/CLI` 是命令行；`Tests/Fixtures.swift` 是测试样张生成器，`Tests/ModelHarness.swift` 是界面模型测试；`Assets/` 存放图标及其生成脚本。
 
 ## 许可证
 

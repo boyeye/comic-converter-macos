@@ -22,40 +22,82 @@ enum MOBIComic {
         comic.authors = first.exthStrings(100)
         comic.rightToLeft = (first.exthStrings(527).first ?? section.exthStrings(527).first) == "rtl"
 
-        func isImage(_ i: Int) -> Bool { i > 0 && i < db.count && Images.sniff(Array(db.record(i).prefix(16))) != nil }
-        // Joint files share one resource block before the boundary, indexed from the MOBI6 header.
-        let candidates = [first.firstImage, base + section.firstImage].filter { $0 > 0 && $0 < db.count }
-        guard let resources = candidates.first(where: isImage) else { throw ConvertError.invalid("书中没有图片") }
-
+        // recindex / kindle:embed number every record from the first resource on (images, fonts, RESC,
+        // placeholders…), not just images. Joint files share one resource block indexed from the MOBI6 header.
+        let resources = [first.firstImage, base + section.firstImage].first { $0 > 0 && $0 < db.count }
         var order: [Int] = []
-        do {
-            let text = String(decoding: try section.text(db, base: base), as: UTF8.self)
-            if section.version >= 8 {
-                order = matches("kindle:embed:([0-9A-Va-v]{4})", in: text).compactMap { Int($0, radix: 32) }.map { resources + $0 - 1 }
-            } else {
-                order = matches("recindex\\s*=\\s*[\"']?(\\d+)", in: text).compactMap { Int($0) }.map { resources + $0 - 1 }
+        if let resources {
+            do {
+                let text = String(decoding: try section.text(db, base: base), as: UTF8.self)
+                let refs = section.version >= 8
+                    ? matches("kindle:embed:([0-9A-Va-v]{4})", in: text).compactMap { Int($0, radix: 32) }
+                    : matches("recindex\\s*=\\s*[\"']?(\\d+)", in: text).compactMap { Int($0) }
+                order = refs.map { resources + $0 - 1 }
+            } catch {
+                comic.warnings.append("正文无法解码（\(error.localizedDescription)），已按图片记录顺序排列")
             }
-        } catch {
-            comic.warnings.append("正文无法解码（\(error.localizedDescription)），已按图片记录顺序排列")
         }
         var seen = Set<Int>()
-        order = order.filter { isImage($0) && seen.insert($0).inserted }
+        order = order.filter { image(db.record($0)) != nil && seen.insert($0).inserted }
         if order.isEmpty {
-            let end = base > resources ? base - 1 : db.count
-            let thumb = first.exthInt(202).map { resources + $0 }
-            order = (resources..<end).filter { isImage($0) && $0 != thumb }
-            if comic.warnings.isEmpty { comic.warnings.append("正文中没有图片引用，已按图片记录顺序排列") }
+            // No usable references: take every image record outside the text, in record order.
+            let text = Set((1...max(1, first.textRecords)).map { $0 } + (base > 0 ? (base...base + section.textRecords).map { $0 } : []))
+            let thumb = resources.flatMap { r in first.exthInt(202).map { r + $0 } }
+            order = (1..<db.count).filter { !text.contains($0) && $0 != thumb && image(db.record($0)) != nil }
+            if !order.isEmpty, comic.warnings.isEmpty { comic.warnings.append("正文中没有可用的图片引用，已按图片记录顺序排列") }
+        }
+        guard !order.isEmpty else {
+            let placeholders = (1..<db.count).contains { db.record($0).starts(with: [0xA0, 0xA0, 0xA0, 0xA0]) }
+            throw ConvertError.invalid(placeholders
+                ? "书中的图片只是占位符，高清图片存放在配套的 .azw.res 文件里（Kindle 商店书籍常见），本文件本身不含图片"
+                : "书中没有图片记录（可能是纯文字电子书）")
         }
 
         let dir = work.appendingPathComponent("mobi", isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         for (i, rec) in order.enumerated() {
-            let data = db.record(rec)
-            let file = dir.appendingPathComponent(String(format: "%05d", i + 1)).appendingPathExtension(Images.sniff(Array(data.prefix(16)))!)
+            let (data, kind) = image(db.record(rec))!
+            let file = dir.appendingPathComponent(String(format: "%05d", i + 1)).appendingPathExtension(kind)
             try Data(data).write(to: file)
             comic.pages.append(file)
         }
         return comic
+    }
+
+    /// Image bytes of a resource record; CRES records wrap an HD image behind a 12-byte header.
+    private static func image(_ record: [UInt8]) -> ([UInt8], String)? {
+        let data = record.has("CRES", at: 0) && record.count > 12 ? Array(record[12...]) : record
+        return Images.sniff(Array(data.prefix(16))).map { (data, $0) }
+    }
+
+    /// A content-free structural summary, for diagnosing books that fail to convert.
+    static func inspect(_ url: URL) throws -> String {
+        let bytes = [UInt8](try Data(contentsOf: url))
+        if bytes.has("CONT", at: 0) || bytes.starts(with: [0xEA] + Array("DRMION".utf8)) { return "KFX 容器（不支持）" }
+        let db = try PalmDB(bytes)
+        var lines = ["文件大小 \(bytes.count) 字节，PalmDB 类型 \(db.type)，记录数 \(db.count)"]
+        guard db.type == "BOOKMOBI" else { return lines.joined(separator: "\n") }
+        let first = try Header(db.record(0))
+        func describe(_ h: Header, _ name: String) -> String {
+            "\(name)：版本 \(h.version)，压缩 \(h.compression)，加密 \(h.encryption)，正文记录 \(h.textRecords)，首资源 \(h.firstImage)，附加标志 0x\(String(h.extraFlags, radix: 16))"
+        }
+        lines.append(describe(first, "主头部"))
+        if let b = first.exthInt(121), b > 0, b < db.count, let k8 = try? Header(db.record(b)) { lines.append(describe(k8, "KF8 段（记录 \(b)）")) }
+        var kinds: [String: Int] = [:]
+        var firstSeen: [String: Int] = [:]
+        for i in 1..<db.count {
+            let r = db.record(i)
+            let kind: String
+            if let (_, k) = image(r) { kind = r.has("CRES", at: 0) ? "CRES/\(k)" : k }
+            else if r.starts(with: [0xA0, 0xA0, 0xA0, 0xA0]) { kind = "占位符" }
+            else if r.count >= 4, r.prefix(4).allSatisfy({ (0x41...0x5A).contains($0) }) { kind = String(decoding: r.prefix(4), as: UTF8.self) }
+            else if r == [0xE9, 0x8E, 0x0D, 0x0A] { kind = "EOF" }
+            else { kind = "其他" }
+            kinds[kind, default: 0] += 1
+            if firstSeen[kind] == nil { firstSeen[kind] = i }
+        }
+        lines.append("记录类型：" + kinds.sorted { firstSeen[$0.key]! < firstSeen[$1.key]! }.map { "\($0.key)×\($0.value)（首次在 \(firstSeen[$0.key]!)）" }.joined(separator: "，"))
+        return lines.joined(separator: "\n")
     }
 
     struct PalmDB {
