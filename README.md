@@ -112,6 +112,12 @@ python3 package.py    # 打包成 dist/ComicConverter-<版本>-arm64.dmg 并验�
 
 源码结构：`Sources/Core` 是转换内核，图形界面与命令行共用；`Sources/App` 是 SwiftUI 界面及其数据模型；`Sources/CLI` 是命令行；`Tests/Fixtures.swift` 是测试样张生成器，`Tests/ModelHarness.swift` 是界面模型测试；`Assets/` 存放图标及其生成脚本。
 
+## ☕ 请我喝杯咖啡
+
+这个工具免费使用。如果它帮到了你，欢迎[请我喝杯咖啡](https://github.com/boyeye#-%E8%AF%B7%E6%88%91%E5%96%9D%E6%9D%AF%E5%92%96%E5%95%A1--buy-me-a-coffee)，用微信扫码即可，金额随意。谢谢支持 ❤️
+
+If you find it useful, you can [buy me a coffee](https://github.com/boyeye#-%E8%AF%B7%E6%88%91%E5%96%9D%E6%9D%AF%E5%92%96%E5%95%A1--buy-me-a-coffee).
+
 ## 许可证
 
 MIT
