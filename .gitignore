@@ -1,0 +1,11 @@
+# Build outputs and caches
+*.app/
+ModuleCache/
+dist/
+*.dmg
+*.dmg.sha256
+.build/
+__pycache__/
+.DS_Store
+# Generated test results
+Tests/results.json
