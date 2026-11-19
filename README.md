@@ -4,7 +4,7 @@ English | [简体中文](README.zh-CN.md)
 
 A native macOS comic converter with a graphical interface and the `comicconv` command line. Convert between CBZ, CBR, CB7, CBT, PDF, EPUB, MOBI, AZW3, and image folders. Particularly useful for converting Kindle MOBI/AZW3 comics back to CBZ.
 
-![screenshot](docs/screenshot.png)
+![screenshot](docs/screenshot-en.png)
 
 - Written entirely in Swift, with no third-party libraries. Build with Apple Command Line Tools; only AZW3 output requires [Calibre](https://calibre-ebook.com).
 - **Lossless first**: JPEG/PNG pages are copied without recompression. JPEG pages are embedded directly in PDFs using DCTDecode and copied directly when read.

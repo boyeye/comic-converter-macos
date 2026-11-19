@@ -15,7 +15,7 @@ for language in localizations:
     shutil.copytree(ROOT/'Resources'/f'{language}.lproj',resources/f'{language}.lproj')
 comics=['cbz','cbr','cb7','cbt','zip','rar','7z','tar','pdf','epub','mobi','azw3','azw','prc']
 info={'CFBundleInfoDictionaryVersion':'6.0','CFBundleExecutable':'ComicConverter','CFBundleIdentifier':'io.github.boyeye.comicconverter',
- 'CFBundleName':'ComicConverter','CFBundleDisplayName':'漫画格式转换','CFBundlePackageType':'APPL','CFBundleVersion':BUILD,
+ 'CFBundleName':'ComicConverter','CFBundleDisplayName':'Comic Converter','CFBundlePackageType':'APPL','CFBundleVersion':BUILD,
  'CFBundleShortVersionString':VERSION,'LSMinimumSystemVersion':'13.0','NSHighResolutionCapable':True,'CFBundleIconFile':'AppIcon.icns',
  'CFBundleDevelopmentRegion':'en','CFBundleLocalizations':localizations,
  'LSApplicationCategoryType':'public.app-category.utilities',
