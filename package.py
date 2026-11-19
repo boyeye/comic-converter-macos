@@ -27,6 +27,23 @@ with tempfile.TemporaryDirectory(prefix='comic-dmg-') as tmp:
 
 不支持带 DRM 的文件与 KFX 格式。源文件不会被修改，同名输出自动加序号，不覆盖已有文件。
 ''')
+    (stage/'Read Me.txt').write_text(f'''Comic Converter {VERSION}
+
+Installation: Drag "漫画格式转换.app" into Applications, then open it from Applications.
+Requires an Apple Silicon (M-series) Mac running macOS 13 or later.
+The app has no paid Developer ID signature or Apple notarization. If the first launch is blocked, try opening it, then go to System Settings → Privacy & Security → Open Anyway.
+
+Read: CBZ/ZIP, CBR/RAR, CB7/7Z, CBT/TAR, PDF, EPUB, MOBI, AZW3, AZW, PRC, image folders
+Write: CBZ, CBR (requires rar), CB7, CBT, PDF, EPUB (fixed layout), MOBI, AZW3 (requires Calibre), image folders
+
+Command line: comicconv is bundled with the app. Run in Terminal:
+  sudo ln -sf "/Applications/漫画格式转换.app/Contents/MacOS/comicconv" /usr/local/bin/comicconv
+  comicconv -t cbz ~/Comics/
+  comicconv -t cbz --name "{{title}} Vol. {{n}}" ~/Comics/   # Rename while converting
+  comicconv --inspect book.mobi   # Print a structural summary to report a conversion failure
+
+DRM-protected files and KFX are not supported. Source files are never modified. Existing output is preserved; a number is appended if the name is taken.
+''')
     subprocess.run(['hdiutil','create','-volname','漫画格式转换','-srcfolder',str(stage),'-format','UDZO','-o',str(dmg)],check=True)
 subprocess.run(['hdiutil','verify',str(dmg)],check=True)
 result=subprocess.run(['hdiutil','attach','-readonly','-nobrowse','-plist',str(dmg)],check=True,capture_output=True)

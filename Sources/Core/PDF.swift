@@ -6,8 +6,8 @@ enum PDFComic {
     // MARK: Reading
 
     static func read(_ url: URL, work: URL, dpi: Double) throws -> Comic {
-        guard let doc = CGPDFDocument(url as CFURL) else { throw ConvertError.invalid("无法打开 PDF") }
-        if doc.isEncrypted, !doc.isUnlocked, !doc.unlockWithPassword("") { throw ConvertError.drm("PDF 需要密码") }
+        guard let doc = CGPDFDocument(url as CFURL) else { throw ConvertError.invalid(String(localized: "无法打开 PDF")) }
+        if doc.isEncrypted, !doc.isUnlocked, !doc.unlockWithPassword("") { throw ConvertError.drm(String(localized: "PDF 需要密码")) }
         let dir = work.appendingPathComponent("pdf", isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         var comic = Comic(title: info(doc, "Title") ?? url.deletingPathExtension().lastPathComponent)
@@ -22,7 +22,7 @@ enum PDFComic {
             try data.write(to: file)
             comic.pages.append(file)
         }
-        if rendered > 0 { comic.warnings.append("\(rendered) 页不是单张整页图片，已重新渲染") }
+        if rendered > 0 { comic.warnings.append(String(localized: "\(String(rendered)) 页不是单张整页图片，已重新渲染")) }
         return comic
     }
 
@@ -96,12 +96,12 @@ enum PDFComic {
         var size = page.getBoxRect(.cropBox).size
         if page.rotationAngle % 180 != 0 { size = CGSize(width: size.height, height: size.width) }
         guard size.width.isFinite, size.height.isFinite, size.width > 0, size.height > 0, size.width < 1e6, size.height < 1e6 else {
-            throw ConvertError.invalid("PDF 页面尺寸异常")
+            throw ConvertError.invalid(String(localized: "PDF 页面尺寸异常"))
         }
         var scale = pixelWidth.map { Double($0) / size.width } ?? dpi / 72
         // Cap the longest side and the total pixel count (80 MP ≈ 320 MB of RGBA) of the render buffer.
         scale = min(scale, 12_000 / max(size.width, size.height), (maxRenderPixels / (size.width * size.height)).squareRoot())
-        guard scale.isFinite, scale > 0 else { throw ConvertError.invalid("PDF 渲染分辨率异常") }
+        guard scale.isFinite, scale > 0 else { throw ConvertError.invalid(String(localized: "PDF 渲染分辨率异常")) }
         var w = max(1, Int((size.width * scale).rounded())), h = max(1, Int((size.height * scale).rounded()))
         if Double(w) * Double(h) > maxRenderPixels {
             // Rounding up can overshoot the cap by a few pixels; shrink both sides until it holds.
@@ -110,7 +110,7 @@ enum PDFComic {
         }
         guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0,
                                   space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else {
-            throw ConvertError.tool("无法分配 \(w)×\(h) 渲染缓冲")
+            throw ConvertError.tool(String(localized: "无法分配 \(String(w))×\(String(h)) 渲染缓冲"))
         }
         ctx.setFillColor(CGColor(gray: 1, alpha: 1))
         ctx.fill(CGRect(x: 0, y: 0, width: w, height: h))
@@ -119,7 +119,7 @@ enum PDFComic {
         // At an unscaled target rect the drawing transform only rotates and translates.
         ctx.concatenate(page.getDrawingTransform(.cropBox, rect: CGRect(origin: .zero, size: size), rotate: 0, preserveAspectRatio: true))
         ctx.drawPDFPage(page)
-        guard let img = ctx.makeImage() else { throw ConvertError.tool("PDF 渲染失败") }
+        guard let img = ctx.makeImage() else { throw ConvertError.tool(String(localized: "PDF 渲染失败")) }
         return try Images.encode(img, as: lossless ? "png" : "jpg")
     }
 
@@ -128,7 +128,7 @@ enum PDFComic {
     static func write(_ comic: Comic, to out: URL) throws {
         var info: [CFString: Any] = [kCGPDFContextTitle: comic.title, kCGPDFContextCreator: "Comic Converter"]
         if !comic.authors.isEmpty { info[kCGPDFContextAuthor] = comic.authors.joined(separator: ", ") }
-        guard let ctx = CGContext(out as CFURL, mediaBox: nil, info as CFDictionary) else { throw ConvertError.tool("无法创建 PDF") }
+        guard let ctx = CGContext(out as CFURL, mediaBox: nil, info as CFDictionary) else { throw ConvertError.tool(String(localized: "无法创建 PDF")) }
         for page in comic.pages {
             let image = try embeddable(page)
             var box = CGRect(x: 0, y: 0, width: image.width, height: image.height)

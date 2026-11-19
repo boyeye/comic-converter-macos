@@ -56,7 +56,7 @@ enum Images {
 
     static func decode(_ url: URL) throws -> CGImage {
         guard let s = CGImageSourceCreateWithURL(url as CFURL, nil), let img = CGImageSourceCreateImageAtIndex(s, 0, nil) else {
-            throw ConvertError.invalid("无法解码图片 \(url.lastPathComponent)")
+            throw ConvertError.invalid(String(localized: "无法解码图片 \(url.lastPathComponent)"))
         }
         return img
     }
@@ -64,9 +64,9 @@ enum Images {
     static func encode(_ img: CGImage, as kind: String, quality: Double = 0.92) throws -> Data {
         let out = NSMutableData()
         let type = (kind == "png" ? UTType.png : UTType.jpeg).identifier as CFString
-        guard let d = CGImageDestinationCreateWithData(out, type, 1, nil) else { throw ConvertError.tool("无法创建图片编码器") }
+        guard let d = CGImageDestinationCreateWithData(out, type, 1, nil) else { throw ConvertError.tool(String(localized: "无法创建图片编码器")) }
         CGImageDestinationAddImage(d, img, kind == "png" ? nil : [kCGImageDestinationLossyCompressionQuality: quality] as CFDictionary)
-        guard CGImageDestinationFinalize(d) else { throw ConvertError.tool("图片编码失败") }
+        guard CGImageDestinationFinalize(d) else { throw ConvertError.tool(String(localized: "图片编码失败")) }
         return out as Data
     }
 
@@ -83,7 +83,7 @@ enum Images {
             converted += 1
             return (url, target)
         }
-        if converted > 0 { warnings.append("\(converted) 页图片格式不被目标格式支持，已转为 JPEG/PNG") }
+        if converted > 0 { warnings.append(String(localized: "\(String(converted)) 页图片格式不被目标格式支持，已转为 JPEG/PNG")) }
         return result
     }
 

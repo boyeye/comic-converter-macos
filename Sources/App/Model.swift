@@ -21,7 +21,7 @@ final class Model: ObservableObject {
         var state = State.waiting
 
         var badge: String {
-            guard let detected else { return "未知格式" }
+            guard let detected else { return String(localized: "未知格式") }
             let ext = url.pathExtension.uppercased()
             if detected == .mobi, ["AZW3", "AZW", "PRC"].contains(ext) { return ext }
             return detected.label.components(separatedBy: " ").first!
@@ -67,7 +67,7 @@ final class Model: ObservableObject {
         if !input.extensions.isEmpty {
             panel.allowedContentTypes = input.extensions.compactMap { UTType(filenameExtension: $0) }
         }
-        panel.message = input == .auto ? "选择漫画文件，或包含漫画文件 / 图片的文件夹" : "选择 \(input.label) 文件，或包含它们的文件夹"
+        panel.message = input == .auto ? String(localized: "选择漫画文件，或包含漫画文件 / 图片的文件夹") : String(localized: "选择 \(input.label) 文件，或包含它们的文件夹")
         if panel.runModal() == .OK { add(panel.urls) }
     }
 
@@ -76,7 +76,7 @@ final class Model: ObservableObject {
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.canCreateDirectories = true
-        panel.prompt = "选择"
+        panel.prompt = String(localized: "选择")
         if panel.runModal() == .OK { outputFolder = panel.url }
     }
 
@@ -155,17 +155,17 @@ struct Backdrop: Identifiable {
     let dark: Bool
 
     static let presets: [Backdrop] = [
-        Backdrop(id: "mint", name: "薄荷绿", colors: ["#D9F2E6"], dark: false),
-        Backdrop(id: "haze", name: "雾霾蓝", colors: ["#DCE5F0"], dark: false),
-        Backdrop(id: "sakura", name: "樱花粉", colors: ["#F8E1E7"], dark: false),
-        Backdrop(id: "cream", name: "奶油白", colors: ["#F5EFE3"], dark: false),
-        Backdrop(id: "morandi", name: "莫兰迪灰", colors: ["#D6D1CA"], dark: false),
-        Backdrop(id: "lavender", name: "薰衣草", colors: ["#E3D5F5", "#C9DDF7"], dark: false),
-        Backdrop(id: "peach", name: "蜜桃渐变", colors: ["#FFD3C2", "#FBC2EB"], dark: false),
-        Backdrop(id: "sunset", name: "日落渐变", colors: ["#FF9A8B", "#FF6A88", "#C86DD7"], dark: true),
-        Backdrop(id: "aurora", name: "极光渐变", colors: ["#1D976C", "#185A9D"], dark: true),
-        Backdrop(id: "midnight", name: "午夜蓝", colors: ["#1B2440", "#2C3E66"], dark: true),
-        Backdrop(id: "graphite", name: "石墨灰", colors: ["#2A2C31"], dark: true),
+        Backdrop(id: "mint", name: String(localized: "薄荷绿"), colors: ["#D9F2E6"], dark: false),
+        Backdrop(id: "haze", name: String(localized: "雾霾蓝"), colors: ["#DCE5F0"], dark: false),
+        Backdrop(id: "sakura", name: String(localized: "樱花粉"), colors: ["#F8E1E7"], dark: false),
+        Backdrop(id: "cream", name: String(localized: "奶油白"), colors: ["#F5EFE3"], dark: false),
+        Backdrop(id: "morandi", name: String(localized: "莫兰迪灰"), colors: ["#D6D1CA"], dark: false),
+        Backdrop(id: "lavender", name: String(localized: "薰衣草"), colors: ["#E3D5F5", "#C9DDF7"], dark: false),
+        Backdrop(id: "peach", name: String(localized: "蜜桃渐变"), colors: ["#FFD3C2", "#FBC2EB"], dark: false),
+        Backdrop(id: "sunset", name: String(localized: "日落渐变"), colors: ["#FF9A8B", "#FF6A88", "#C86DD7"], dark: true),
+        Backdrop(id: "aurora", name: String(localized: "极光渐变"), colors: ["#1D976C", "#185A9D"], dark: true),
+        Backdrop(id: "midnight", name: String(localized: "午夜蓝"), colors: ["#1B2440", "#2C3E66"], dark: true),
+        Backdrop(id: "graphite", name: String(localized: "石墨灰"), colors: ["#2A2C31"], dark: true),
     ]
 }
 
@@ -201,7 +201,7 @@ final class Appearance: ObservableObject {
     func pickImage() {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.image]
-        panel.message = "选择背景图片"
+        panel.message = String(localized: "选择背景图片")
         guard panel.runModal() == .OK, let src = panel.url, let img = NSImage(contentsOf: src) else { return }
         // Keep a private copy so the background survives the original being moved or deleted.
         try? FileManager.default.removeItem(at: imageURL)

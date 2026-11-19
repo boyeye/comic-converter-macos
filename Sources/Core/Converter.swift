@@ -9,29 +9,29 @@ enum OutputFormat: String, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .cbz: return "CBZ（推荐）"
-        case .cbr: return "CBR"
-        case .cb7: return "CB7"
-        case .cbt: return "CBT"
-        case .epub: return "EPUB"
-        case .mobi: return "MOBI"
-        case .azw3: return "AZW3"
-        case .pdf: return "PDF"
-        case .folder: return "图片文件夹"
+        case .cbz: return String(localized: "CBZ（推荐）")
+        case .cbr: return String(localized: "CBR")
+        case .cb7: return String(localized: "CB7")
+        case .cbt: return String(localized: "CBT")
+        case .epub: return String(localized: "EPUB")
+        case .mobi: return String(localized: "MOBI")
+        case .azw3: return String(localized: "AZW3")
+        case .pdf: return String(localized: "PDF")
+        case .folder: return String(localized: "图片文件夹")
         }
     }
 
     var summary: String {
         switch self {
-        case .cbz: return "ZIP 打包的漫画，几乎所有漫画阅读器都支持"
-        case .cbr: return "RAR 打包的漫画。RAR 是专有格式，需要安装 RARLAB 的 rar 命令行工具"
-        case .cb7: return "7z 打包的漫画，体积最小，但支持它的阅读器较少"
-        case .cbt: return "TAR 打包的漫画，不压缩，很少使用，一般用不到"
-        case .epub: return "固定版式电子书，适合 Apple Books、Kobo，也可以用 Send to Kindle 发送"
-        case .mobi: return "Kindle 旧格式，适合老款 Kindle"
-        case .azw3: return "Kindle 新格式，需要安装 Calibre"
-        case .pdf: return "每页一张图片，任何设备都能打开"
-        case .folder: return "按页码命名的图片文件"
+        case .cbz: return String(localized: "ZIP 打包的漫画，几乎所有漫画阅读器都支持")
+        case .cbr: return String(localized: "RAR 打包的漫画。RAR 是专有格式，需要安装 RARLAB 的 rar 命令行工具")
+        case .cb7: return String(localized: "7z 打包的漫画，体积最小，但支持它的阅读器较少")
+        case .cbt: return String(localized: "TAR 打包的漫画，不压缩，很少使用，一般用不到")
+        case .epub: return String(localized: "固定版式电子书，适合 Apple Books、Kobo，也可以用 Send to Kindle 发送")
+        case .mobi: return String(localized: "Kindle 旧格式，适合老款 Kindle")
+        case .azw3: return String(localized: "Kindle 新格式，需要安装 Calibre")
+        case .pdf: return String(localized: "每页一张图片，任何设备都能打开")
+        case .folder: return String(localized: "按页码命名的图片文件")
         }
     }
 }
@@ -43,15 +43,15 @@ enum InputFormat: String, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .auto: return "自动识别（推荐）"
-        case .cbz: return "CBZ / ZIP"
-        case .cbr: return "CBR / RAR"
-        case .cb7: return "CB7 / 7Z"
-        case .cbt: return "CBT / TAR"
-        case .pdf: return "PDF"
-        case .epub: return "EPUB"
-        case .mobi: return "MOBI / AZW3 / AZW / PRC"
-        case .folder: return "图片文件夹"
+        case .auto: return String(localized: "自动识别（推荐）")
+        case .cbz: return String(localized: "CBZ / ZIP")
+        case .cbr: return String(localized: "CBR / RAR")
+        case .cb7: return String(localized: "CB7 / 7Z")
+        case .cbt: return String(localized: "CBT / TAR")
+        case .pdf: return String(localized: "PDF")
+        case .epub: return String(localized: "EPUB")
+        case .mobi: return String(localized: "MOBI / AZW3 / AZW / PRC")
+        case .folder: return String(localized: "图片文件夹")
         }
     }
 
@@ -142,7 +142,7 @@ enum Converter {
 
     static func read(_ url: URL, work: URL, options: ConversionOptions) throws -> Comic {
         if kfxExtensions.contains(url.pathExtension.lowercased()) {
-            throw ConvertError.unsupported("KFX 格式。请先用 Calibre 的 KFX Input 插件转成 AZW3 或 EPUB")
+            throw ConvertError.unsupported(String(localized: "KFX 格式。请先用 Calibre 的 KFX Input 插件转成 AZW3 或 EPUB"))
         }
         let detected = InputFormat.detect(url)
         let format = options.input == .auto ? detected : options.input
@@ -153,12 +153,12 @@ enum Converter {
             case .mobi?: return try MOBIComic.read(url, work: work)
             case .pdf?: return try PDFComic.read(url, work: work, dpi: options.dpi)
             case .epub?: return try EPUBComic.read(url, work: work)
-            case .auto?, nil: throw ConvertError.unsupported("无法识别的文件类型 .\(url.pathExtension)")
+            case .auto?, nil: throw ConvertError.unsupported(String(localized: "无法识别的文件类型 .\(url.pathExtension)"))
             }
         } catch let error as ConvertError {
             // A forced format that disagrees with the content is the likeliest cause; say so.
             if options.input != .auto, let detected, detected != options.input {
-                throw ConvertError.invalid("按 \(options.input.label) 读取失败；文件内容看起来是 \(detected.label)。请改用「自动识别」")
+                throw ConvertError.invalid(String(localized: "按 \(options.input.label) 读取失败；文件内容看起来是 \(detected.label)。请改用「自动识别」"))
             }
             throw error
         }
@@ -169,7 +169,7 @@ enum Converter {
         let work = try makeWorkDirectory()
         defer { try? FileManager.default.removeItem(at: work) }
         var comic = try read(input, work: work, options: options)
-        guard !comic.pages.isEmpty else { throw ConvertError.invalid("没有找到任何页面图片") }
+        guard !comic.pages.isEmpty else { throw ConvertError.invalid(String(localized: "没有找到任何页面图片")) }
         if options.direction != .auto { comic.rightToLeft = options.direction == .rtl }
 
         let dir = options.outputDirectory ?? input.deletingLastPathComponent()
@@ -191,7 +191,7 @@ enum Converter {
                 continue
             }
         }
-        throw ConvertError.tool("无法在 \(dir.path) 中找到可用的输出文件名")
+        throw ConvertError.tool(String(localized: "无法在 \(dir.path) 中找到可用的输出文件名"))
     }
 
     static func write(_ comic: inout Comic, format: OutputFormat, to out: URL, work: URL) throws {
@@ -201,7 +201,7 @@ enum Converter {
         case .cbt: try Archive.writeTar(comic, format: "ustar", to: out, work: work)
         case .cbr:
             guard let rar = Tools.rar else {
-                throw ConvertError.unsupported("输出 CBR 需要 RAR 命令行工具（RARLAB 共享软件）。可执行 brew install --cask rar 安装")
+                throw ConvertError.unsupported(String(localized: "输出 CBR 需要 RAR 命令行工具（RARLAB 共享软件）。可执行 brew install --cask rar 安装"))
             }
             try Archive.writeRar(comic, rar: rar, to: out, work: work)
         case .folder: _ = try Archive.stage(comic, in: out, comicInfo: false)
@@ -210,11 +210,11 @@ enum Converter {
         case .mobi: try MOBIComic.write(&comic, to: out, work: work)
         case .azw3:
             guard let calibre = Tools.ebookConvert else {
-                throw ConvertError.unsupported("输出 AZW3 需要先安装 Calibre（https://calibre-ebook.com）")
+                throw ConvertError.unsupported(String(localized: "输出 AZW3 需要先安装 Calibre（https://calibre-ebook.com）"))
             }
             let epub = work.appendingPathComponent("calibre-input.epub")
             try EPUBComic.write(&comic, to: epub, work: work)
-            try runTool(calibre, [epub.path, out.path], name: "Calibre 转换")
+            try runTool(calibre, [epub.path, out.path], name: String(localized: "Calibre 转换"))
         }
     }
 

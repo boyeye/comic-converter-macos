@@ -5,9 +5,9 @@ enum ConvertError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .unsupported(let m): return "不支持：\(m)"
-        case .drm(let m): return "受 DRM 保护，无法转换（\(m)）"
-        case .invalid(let m): return "无法解析：\(m)"
+        case .unsupported(let m): return String(localized: "不支持：\(m)")
+        case .drm(let m): return String(localized: "受 DRM 保护，无法转换（\(m)）")
+        case .invalid(let m): return String(localized: "无法解析：\(m)")
         case .tool(let m): return m
         }
     }
@@ -27,9 +27,9 @@ enum ReadingDirection: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var label: String {
         switch self {
-        case .auto: return "保持原书设置"
-        case .rtl: return "从右到左（日漫）"
-        case .ltr: return "从左到右"
+        case .auto: return String(localized: "保持原书设置")
+        case .rtl: return String(localized: "从右到左（日漫）")
+        case .ltr: return String(localized: "从左到右")
         }
     }
 }
@@ -69,7 +69,7 @@ func runTool(_ path: String, _ args: [String], name: String, environment: [Strin
     let output = reader()
     guard p.terminationStatus == 0 else {
         let tail = String(decoding: output, as: UTF8.self).split(separator: "\n").suffix(3).joined(separator: " ")
-        throw ConvertError.tool("\(name)失败（退出码 \(p.terminationStatus)）：\(tail)")
+        throw ConvertError.tool(String(localized: "\(name)失败（退出码 \(String(p.terminationStatus))）：\(tail)"))
     }
     return String(decoding: output, as: UTF8.self)
 }
@@ -122,18 +122,18 @@ func sweepStaleWorkDirectories(olderThan age: TimeInterval = 24 * 3600) {
 /// so the file cannot be swapped between checking and reading.
 func readContainedData(_ url: URL, in root: URL, limit: Int) throws -> Data {
     let fd = open(url.path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC)
-    guard fd >= 0 else { throw ConvertError.invalid("无法打开 \(url.lastPathComponent)") }
+    guard fd >= 0 else { throw ConvertError.invalid(String(localized: "无法打开 \(url.lastPathComponent)")) }
     let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
     var st = stat()
-    guard fstat(fd, &st) == 0, st.st_mode & S_IFMT == S_IFREG else { throw ConvertError.invalid("\(url.lastPathComponent) 不是普通文件") }
+    guard fstat(fd, &st) == 0, st.st_mode & S_IFMT == S_IFREG else { throw ConvertError.invalid(String(localized: "\(url.lastPathComponent) 不是普通文件")) }
     var buffer = [CChar](repeating: 0, count: Int(MAXPATHLEN))
-    guard fcntl(fd, F_GETPATH, &buffer) == 0, let base = realpath(root.path, nil) else { throw ConvertError.invalid("无法确认 \(url.lastPathComponent) 的位置") }
+    guard fcntl(fd, F_GETPATH, &buffer) == 0, let base = realpath(root.path, nil) else { throw ConvertError.invalid(String(localized: "无法确认 \(url.lastPathComponent) 的位置")) }
     let rootPath = String(cString: base)
     free(base)
-    guard String(cString: buffer).hasPrefix(rootPath + "/") else { throw ConvertError.invalid("\(url.lastPathComponent) 位于书籍目录之外") }
-    guard st.st_size <= limit else { throw ConvertError.invalid("\(url.lastPathComponent) 过大（\(st.st_size >> 20) MB）") }
+    guard String(cString: buffer).hasPrefix(rootPath + "/") else { throw ConvertError.invalid(String(localized: "\(url.lastPathComponent) 位于书籍目录之外")) }
+    guard st.st_size <= limit else { throw ConvertError.invalid(String(localized: "\(url.lastPathComponent) 过大（\(String(st.st_size >> 20)) MB）")) }
     let data = try handle.read(upToCount: limit + 1) ?? Data()
-    guard data.count <= limit else { throw ConvertError.invalid("\(url.lastPathComponent) 过大") }
+    guard data.count <= limit else { throw ConvertError.invalid(String(localized: "\(url.lastPathComponent) 过大")) }
     return data
 }
 
@@ -187,11 +187,11 @@ func streamLines(_ path: String, _ args: [String], name: String, environment: [S
     if stopped { p.terminate() }
     p.waitUntilExit()
     let errData = errReader()
-    if seen > maxBytes { throw ConvertError.invalid("\(name)：输出超过 \(maxBytes >> 20) MB") }
+    if seen > maxBytes { throw ConvertError.invalid(String(localized: "\(name)：输出超过 \(String(maxBytes >> 20)) MB")) }
     if !stopped, !pending.isEmpty { _ = onLine(String(decoding: pending, as: UTF8.self)) }
     guard stopped || p.terminationStatus == 0 else {
         let tail = String(decoding: errData, as: UTF8.self).split(separator: "\n").suffix(3).joined(separator: " ")
-        throw ConvertError.tool("\(name)失败（退出码 \(p.terminationStatus)）：\(tail)")
+        throw ConvertError.tool(String(localized: "\(name)失败（退出码 \(String(p.terminationStatus))）：\(tail)"))
     }
 }
 

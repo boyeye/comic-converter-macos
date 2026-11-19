@@ -7,13 +7,13 @@ struct ComicConverterApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
 
     var body: some Scene {
-        WindowGroup("漫画格式转换") {
+        WindowGroup(String(localized: "漫画格式转换")) {
             ContentView(model: Model.shared, appearance: Appearance.shared)
                 .frame(minWidth: 720, minHeight: 500)
         }
         .commands {
             CommandGroup(replacing: .newItem) {
-                Button("添加文件…") { Model.shared.choose() }.keyboardShortcut("o")
+                Button(String(localized: "添加文件…")) { Model.shared.choose() }.keyboardShortcut("o")
             }
         }
     }
@@ -56,9 +56,9 @@ struct AppearancePicker: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("背景").font(.headline)
+            Text(String(localized: "背景")).font(.headline)
             LazyVGrid(columns: Array(repeating: GridItem(.fixed(64), spacing: 10), count: 4), spacing: 12) {
-                tile(name: "跟随系统", selected: appearance.choice == "system") {
+                tile(name: String(localized: "跟随系统"), selected: appearance.choice == "system") {
                     Color(nsColor: .windowBackgroundColor).overlay(Image(systemName: "circle.lefthalf.filled").foregroundStyle(.secondary))
                 } action: { appearance.choice = "system" }
                 ForEach(Backdrop.presets) { p in
@@ -69,13 +69,13 @@ struct AppearancePicker: View {
             }
             Divider()
             HStack {
-                ColorPicker("自定义颜色", selection: $custom, supportsOpacity: false)
+                ColorPicker(String(localized: "自定义颜色"), selection: $custom, supportsOpacity: false)
                     .onChange(of: custom) { appearance.setColor($0) }
                 Spacer()
-                Button("选择图片…") { appearance.pickImage() }
+                Button(String(localized: "选择图片…")) { appearance.pickImage() }
             }
             if appearance.choice == "image" {
-                Text("当前使用自定义图片").font(.caption).foregroundStyle(.secondary)
+                Text(String(localized: "当前使用自定义图片")).font(.caption).foregroundStyle(.secondary)
             }
         }
         .padding(16)
@@ -131,8 +131,8 @@ struct ContentView: View {
         .preferredColorScheme(appearance.scheme)
         .toolbar {
             ToolbarItem {
-                Button { showAppearance.toggle() } label: { Label("背景", systemImage: "paintpalette") }
-                    .help("更换背景颜色或图片")
+                Button { showAppearance.toggle() } label: { Label(String(localized: "背景"), systemImage: "paintpalette") }
+                    .help(String(localized: "更换背景颜色或图片"))
                     .popover(isPresented: $showAppearance, arrowEdge: .bottom) { AppearancePicker(appearance: appearance) }
             }
         }
@@ -141,19 +141,19 @@ struct ContentView: View {
     private var settings: some View {
         Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 10) {
             GridRow {
-                Text("输入格式").foregroundStyle(.secondary)
+                Text(String(localized: "输入格式")).foregroundStyle(.secondary)
                 Picker("", selection: $model.input) {
                     ForEach(InputFormat.allCases) { Text($0.label).tag($0) }
                 }
                 .labelsHidden().frame(width: 240, alignment: .leading)
             }
             GridRow {
-                Text("输出格式").foregroundStyle(.secondary)
+                Text(String(localized: "输出格式")).foregroundStyle(.secondary)
                 HStack(spacing: 10) {
                     Picker("", selection: $model.format) {
-                        Section("漫画包") { ForEach(OutputFormat.comicArchives) { Text($0.label).tag($0) } }
-                        Section("电子书") { ForEach(OutputFormat.ebooks) { Text($0.label).tag($0) } }
-                        Section("其他") { Text(OutputFormat.folder.label).tag(OutputFormat.folder) }
+                        Section(String(localized: "漫画包")) { ForEach(OutputFormat.comicArchives) { Text($0.label).tag($0) } }
+                        Section(String(localized: "电子书")) { ForEach(OutputFormat.ebooks) { Text($0.label).tag($0) } }
+                        Section(String(localized: "其他")) { Text(OutputFormat.folder.label).tag(OutputFormat.folder) }
                     }
                     .labelsHidden().frame(width: 240, alignment: .leading)
                     Text(model.format.summary).font(.callout).foregroundStyle(.secondary).lineLimit(2)
@@ -166,31 +166,31 @@ struct ContentView: View {
                 }
             }
             GridRow {
-                Text("阅读方向").foregroundStyle(.secondary)
+                Text(String(localized: "阅读方向")).foregroundStyle(.secondary)
                 Picker("", selection: $model.direction) {
                     ForEach(ReadingDirection.allCases) { Text($0.label).tag($0) }
                 }
                 .labelsHidden().frame(width: 240, alignment: .leading)
             }
             GridRow {
-                Text("文件命名").foregroundStyle(.secondary)
+                Text(String(localized: "文件命名")).foregroundStyle(.secondary)
                 HStack {
-                    Text(model.naming.isDefault ? "保持原名" : model.naming.template)
+                    Text(model.naming.isDefault ? String(localized: "保持原名") : model.naming.template)
                         .lineLimit(1).truncationMode(.middle)
                         .foregroundStyle(model.naming.isDefault ? .secondary : .primary)
-                    Button("批量命名…") { showNaming = true }
-                    if !model.naming.isDefault { Button("恢复原名") { model.naming = NamingRule() } }
+                    Button(String(localized: "批量命名…")) { showNaming = true }
+                    if !model.naming.isDefault { Button(String(localized: "恢复原名")) { model.naming = NamingRule() } }
                 }
                 .sheet(isPresented: $showNaming) { NamingSheet(model: model) }
             }
             GridRow {
-                Text("保存位置").foregroundStyle(.secondary)
+                Text(String(localized: "保存位置")).foregroundStyle(.secondary)
                 HStack {
-                    Text(model.outputFolder?.path ?? "与源文件相同的文件夹")
+                    Text(model.outputFolder?.path ?? String(localized: "与源文件相同的文件夹"))
                         .lineLimit(1).truncationMode(.middle)
                         .foregroundStyle(model.outputFolder == nil ? .secondary : .primary)
-                    Button("选择…") { model.chooseOutput() }
-                    if model.outputFolder != nil { Button("恢复默认") { model.outputFolder = nil } }
+                    Button(String(localized: "选择…")) { model.chooseOutput() }
+                    if model.outputFolder != nil { Button(String(localized: "恢复默认")) { model.outputFolder = nil } }
                 }
             }
         }
@@ -200,8 +200,8 @@ struct ContentView: View {
     /// Only shown when the chosen output cannot be produced on this Mac.
     private var hint: String? {
         switch model.format {
-        case .azw3 where Tools.ebookConvert == nil: return "未检测到 Calibre，无法输出 AZW3。请先从 calibre-ebook.com 安装"
-        case .cbr where Tools.rar == nil: return "未检测到 rar 命令，无法输出 CBR。可在终端执行：brew install --cask rar"
+        case .azw3 where Tools.ebookConvert == nil: return String(localized: "未检测到 Calibre，无法输出 AZW3。请先从 calibre-ebook.com 安装")
+        case .cbr where Tools.rar == nil: return String(localized: "未检测到 rar 命令，无法输出 CBR。可在终端执行：brew install --cask rar")
         default: return nil
         }
     }
@@ -210,9 +210,9 @@ struct ContentView: View {
         if model.items.isEmpty {
             VStack(spacing: 10) {
                 Image(systemName: "books.vertical").font(.system(size: 44)).foregroundStyle(.secondary)
-                Text("把漫画文件或文件夹拖到这里").font(.title3)
-                Text("可读取：CBZ · CBR · CB7 · CBT · PDF · EPUB · MOBI · AZW3 · 图片文件夹").font(.callout).foregroundStyle(.secondary)
-                Button("添加文件…") { model.choose() }.padding(.top, 4)
+                Text(String(localized: "把漫画文件或文件夹拖到这里")).font(.title3)
+                Text(String(localized: "可读取：CBZ · CBR · CB7 · CBT · PDF · EPUB · MOBI · AZW3 · 图片文件夹")).font(.callout).foregroundStyle(.secondary)
+                Button(String(localized: "添加文件…")) { model.choose() }.padding(.top, 4)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(targeted ? Color.accentColor.opacity(0.15) : Color.clear)
@@ -243,46 +243,46 @@ struct ContentView: View {
         return HStack(spacing: 10) {
             Toggle("", isOn: Binding(get: { all }, set: { model.setChecked(Set(model.items.map(\.id)), $0) }))
                 .toggleStyle(.checkbox).labelsHidden()
-                .help(all ? "全部取消勾选" : "全部勾选")
-            Text("已勾选 \(model.checkedCount) / \(model.items.count)").font(.callout)
+                .help(all ? String(localized: "全部取消勾选") : String(localized: "全部勾选"))
+            Text(String(localized: "已勾选 \(model.checkedCount) / \(model.items.count)")).font(.callout)
             Spacer()
             if !model.selection.isEmpty {
-                Text("已选中 \(model.selection.count) 项").font(.callout).foregroundStyle(.secondary)
-                Button("勾选") { model.setChecked(model.selection, true) }
-                Button("取消勾选") { model.setChecked(model.selection, false) }
-                Button("移除") { model.remove(model.selection) }.disabled(model.running)
+                Text(String(localized: "已选中 \(model.selection.count) 项")).font(.callout).foregroundStyle(.secondary)
+                Button(String(localized: "勾选")) { model.setChecked(model.selection, true) }
+                Button(String(localized: "取消勾选")) { model.setChecked(model.selection, false) }
+                Button(String(localized: "移除")) { model.remove(model.selection) }.disabled(model.running)
             } else {
-                Text("⌘ / ⇧ 点击多选 · 拖动调整顺序").font(.callout).foregroundStyle(.secondary)
+                Text(String(localized: "⌘ / ⇧ 点击多选 · 拖动调整顺序")).font(.callout).foregroundStyle(.secondary)
             }
-            Button("按名称排序") { model.sortByName() }.disabled(model.running)
+            Button(String(localized: "按名称排序")) { model.sortByName() }.disabled(model.running)
         }
         .controlSize(.small)
     }
 
     @ViewBuilder private func contextMenu(for ids: Set<UUID>) -> some View {
         if !ids.isEmpty {
-            Button("勾选") { model.setChecked(ids, true) }
-            Button("取消勾选") { model.setChecked(ids, false) }
+            Button(String(localized: "勾选")) { model.setChecked(ids, true) }
+            Button(String(localized: "取消勾选")) { model.setChecked(ids, false) }
             Divider()
             if ids.count == 1, let item = model.items.first(where: { ids.contains($0.id) }) {
                 if case .done(let r) = item.state {
-                    Button("在 Finder 中显示结果") { NSWorkspace.shared.activateFileViewerSelecting([r.output]) }
+                    Button(String(localized: "在 Finder 中显示结果")) { NSWorkspace.shared.activateFileViewerSelecting([r.output]) }
                 }
-                Button("在 Finder 中显示源文件") { NSWorkspace.shared.activateFileViewerSelecting([item.url]) }
+                Button(String(localized: "在 Finder 中显示源文件")) { NSWorkspace.shared.activateFileViewerSelecting([item.url]) }
                 Divider()
             }
-            Button("移除 \(ids.count) 项") { model.remove(ids) }.disabled(model.running)
+            Button(String(localized: "移除 \(ids.count) 项")) { model.remove(ids) }.disabled(model.running)
         }
     }
 
     private var footer: some View {
         HStack {
-            Button("添加…") { model.choose() }
-            Button("清除已完成") { model.clearFinished() }.disabled(model.running)
-            Button("清空") { model.remove(Set(model.items.map(\.id))) }.disabled(model.running || model.items.isEmpty)
+            Button(String(localized: "添加…")) { model.choose() }
+            Button(String(localized: "清除已完成")) { model.clearFinished() }.disabled(model.running)
+            Button(String(localized: "清空")) { model.remove(Set(model.items.map(\.id))) }.disabled(model.running || model.items.isEmpty)
             Spacer()
             Text(summary).foregroundStyle(.secondary).font(.callout)
-            Button(model.running ? "转换中…" : "转换已勾选（\(model.checkedCount)）") { model.start() }
+            Button(model.running ? String(localized: "转换中…") : String(localized: "转换已勾选（\(String(model.checkedCount))）")) { model.start() }
                 .keyboardShortcut(.defaultAction)
                 .disabled(model.running || model.checkedCount == 0)
         }
@@ -291,7 +291,7 @@ struct ContentView: View {
     private var summary: String {
         let done = model.items.filter { if case .done = $0.state { return true }; return false }.count
         let failed = model.items.filter { if case .failed = $0.state { return true }; return false }.count
-        return model.items.isEmpty ? "" : "完成 \(done)" + (failed > 0 ? " · 失败 \(failed)" : "")
+        return model.items.isEmpty ? "" : String(localized: "完成 \(String(done))") + (failed > 0 ? String(localized: " · 失败 \(String(failed))") : "")
     }
 }
 
@@ -331,12 +331,12 @@ private struct Row: View {
     @ViewBuilder private var detail: some View {
         switch item.state {
         case .waiting:
-            if let preview { Text("→ \(preview)").foregroundStyle(Color.accentColor) }
+            if let preview { Text(String(localized: "→ \(preview)")).foregroundStyle(Color.accentColor) }
             else { Text(item.url.deletingLastPathComponent().path).foregroundStyle(.secondary) }
-        case .running: Text("正在转换…").foregroundStyle(.secondary)
+        case .running: Text(String(localized: "正在转换…")).foregroundStyle(.secondary)
         case .done(let r):
             VStack(alignment: .leading, spacing: 1) {
-                Text("→ \(r.output.lastPathComponent) · \(r.pages) 页").foregroundStyle(.secondary)
+                Text(String(localized: "→ \(r.output.lastPathComponent) · \(r.pages) 页")).foregroundStyle(.secondary)
                 ForEach(r.warnings, id: \.self) { Text($0).foregroundStyle(.orange) }
             }
         case .failed(let message): Text(message).foregroundStyle(.red)
@@ -351,41 +351,41 @@ struct NamingSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     private static let presets: [(String, String)] = [
-        ("保持原名", "{原名}"),
-        ("书内标题", "{标题}"),
-        ("作者 - 标题", "{作者} - {标题}"),
-        ("标题 第N卷", "{标题} 第{序号}卷"),
-        ("序号 原名", "{序号} {原名}"),
-        ("原名 [页数P]", "{原名} [{页数}P]"),
+        (String(localized: "保持原名"), String(localized: "{原名}")),
+        (String(localized: "书内标题"), String(localized: "{标题}")),
+        (String(localized: "作者 - 标题"), String(localized: "{作者} - {标题}")),
+        (String(localized: "标题 第N卷"), String(localized: "{标题} 第{序号}卷")),
+        (String(localized: "序号 原名"), String(localized: "{序号} {原名}")),
+        (String(localized: "原名 [页数P]"), String(localized: "{原名} [{页数}P]")),
     ]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("批量命名").font(.title2.bold())
-            Text("转换时按下面的规则命名输出文件。序号按列表中已勾选文件的顺序编号，拖动列表即可调整顺序。")
+            Text(String(localized: "批量命名")).font(.title2.bold())
+            Text(String(localized: "转换时按下面的规则命名输出文件。序号按列表中已勾选文件的顺序编号，拖动列表即可调整顺序。"))
                 .font(.callout).foregroundStyle(.secondary)
 
-            GroupBox("命名模板") {
+            GroupBox(String(localized: "命名模板")) {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
-                        TextField("{原名}", text: $model.naming.template).textFieldStyle(.roundedBorder)
-                        Menu("常用模板") {
-                            ForEach(Self.presets, id: \.1) { p in Button("\(p.0)　\(p.1)") { model.naming.template = p.1 } }
+                        TextField(String(localized: "{原名}"), text: $model.naming.template).textFieldStyle(.roundedBorder)
+                        Menu(String(localized: "常用模板")) {
+                            ForEach(Self.presets, id: \.1) { p in Button(String(localized: "\(p.0)　\(p.1)")) { model.naming.template = p.1 } }
                         }
                         .fixedSize()
                     }
                     HStack(spacing: 6) {
-                        Text("插入：").font(.caption).foregroundStyle(.secondary)
+                        Text(String(localized: "插入：")).font(.caption).foregroundStyle(.secondary)
                         ForEach(NamingRule.tokens, id: \.token) { t in
                             Button(t.token) { model.naming.template += t.token }
                                 .controlSize(.small).help(t.help)
                         }
                     }
                     HStack(spacing: 16) {
-                        Stepper("起始序号 \(model.naming.start)", value: $model.naming.start, in: 0...99_999)
-                        Picker("序号位数", selection: $model.naming.padding) {
-                            Text("自动").tag(0)
-                            ForEach(1...4, id: \.self) { Text("\($0) 位").tag($0) }
+                        Stepper(String(localized: "起始序号 \(model.naming.start)"), value: $model.naming.start, in: 0...99_999)
+                        Picker(String(localized: "序号位数"), selection: $model.naming.padding) {
+                            Text(String(localized: "自动")).tag(0)
+                            ForEach(1...4, id: \.self) { Text(String(localized: "\($0) 位")).tag($0) }
                         }
                         .fixedSize()
                     }
@@ -393,26 +393,26 @@ struct NamingSheet: View {
                 .padding(6)
             }
 
-            GroupBox("清理原名和标题") {
+            GroupBox(String(localized: "清理原名和标题")) {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
-                        TextField("查找", text: $model.naming.find).textFieldStyle(.roundedBorder)
+                        TextField(String(localized: "查找"), text: $model.naming.find).textFieldStyle(.roundedBorder)
                         Image(systemName: "arrow.right").foregroundStyle(.secondary)
-                        TextField("替换为（可留空）", text: $model.naming.replace).textFieldStyle(.roundedBorder)
-                        Toggle("正则", isOn: $model.naming.useRegex)
+                        TextField(String(localized: "替换为（可留空）"), text: $model.naming.replace).textFieldStyle(.roundedBorder)
+                        Toggle(String(localized: "正则"), isOn: $model.naming.useRegex)
                     }
                     if let error = model.naming.regexError { Text(error).font(.caption).foregroundStyle(.red) }
-                    Toggle("去掉【】[]（）() 括号及其中内容（如汉化组、来源标记）", isOn: $model.naming.stripBrackets)
+                    Toggle(String(localized: "去掉【】[]（）() 括号及其中内容（如汉化组、来源标记）"), isOn: $model.naming.stripBrackets)
                 }
                 .padding(6)
             }
 
-            GroupBox("预览") {
+            GroupBox(String(localized: "预览")) {
                 VStack(alignment: .leading, spacing: 4) {
                     let previews = model.previewNames()
                     let shown = model.items.filter(\.checked).prefix(6)
                     if shown.isEmpty {
-                        Text("列表中还没有勾选的文件").foregroundStyle(.secondary)
+                        Text(String(localized: "列表中还没有勾选的文件")).foregroundStyle(.secondary)
                     }
                     ForEach(Array(shown)) { item in
                         HStack(spacing: 6) {
@@ -423,8 +423,8 @@ struct NamingSheet: View {
                         }
                         .font(.callout)
                     }
-                    if model.naming.template.contains("{标题}") || model.naming.template.contains("{作者}") || model.naming.template.contains("{页数}") {
-                        Text("‹标题›‹作者›‹页数› 在转换时从书中读取后填入；书中没有作者时该项为空。")
+                    if model.naming.template.contains("{标题}") || model.naming.template.contains("{作者}") || model.naming.template.contains("{页数}") || model.naming.template.contains("{title}") || model.naming.template.contains("{author}") || model.naming.template.contains("{pages}") {
+                        Text(String(localized: "‹标题›‹作者›‹页数› 在转换时从书中读取后填入；书中没有作者时该项为空。"))
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 }
@@ -433,9 +433,9 @@ struct NamingSheet: View {
             }
 
             HStack {
-                Button("恢复原名") { model.naming = NamingRule() }
+                Button(String(localized: "恢复原名")) { model.naming = NamingRule() }
                 Spacer()
-                Button("完成") { dismiss() }.keyboardShortcut(.defaultAction)
+                Button(String(localized: "完成")) { dismiss() }.keyboardShortcut(.defaultAction)
             }
         }
         .padding(20)

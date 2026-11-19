@@ -22,9 +22,9 @@ enum Archive {
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let limit = maxExpandedBytes
         let declared = try declaredSize(archive)
-        guard let free = freeSpace(dir) else { throw ConvertError.tool("无法查询磁盘剩余空间") }
-        guard declared <= limit else { throw ConvertError.invalid("压缩包解开后约 \(declared >> 20) MB，超过 \(limit >> 20) MB 上限") }
-        guard declared + minFreeBytes <= free else { throw ConvertError.invalid("磁盘剩余空间不足以解开压缩包（需要约 \(declared >> 20) MB）") }
+        guard let free = freeSpace(dir) else { throw ConvertError.tool(String(localized: "无法查询磁盘剩余空间")) }
+        guard declared <= limit else { throw ConvertError.invalid(String(localized: "压缩包解开后约 \(String(declared >> 20)) MB，超过 \(String(limit >> 20)) MB 上限")) }
+        guard declared + minFreeBytes <= free else { throw ConvertError.invalid(String(localized: "磁盘剩余空间不足以解开压缩包（需要约 \(String(declared >> 20)) MB）")) }
         try extractWatched(archive, to: dir, limit: limit)
         try removeSymlinks(in: dir)
     }
@@ -42,20 +42,20 @@ enum Archive {
         // leave no free text before the size, so owner names cannot fake a size field.
         let re = try! NSRegularExpression(pattern: "^\\S+\\s+\\d+\\s+\\d+\\s+\\d+\\s+(\\d+)\\s+[A-Z][a-z]{2}\\s+\\d{1,2}\\s+(?:\\d{1,2}:\\d{2}|\\d{4})\\s")
         var entries = 0, total: Int64 = 0, failure: ConvertError?
-        try streamLines(bsdtar, ["-t", "-v", "--numeric-owner", "-f", archive.path], name: "读取压缩包目录", environment: ["LC_ALL": "C"],
+        try streamLines(bsdtar, ["-t", "-v", "--numeric-owner", "-f", archive.path], name: String(localized: "读取压缩包目录"), environment: ["LC_ALL": "C"],
                         maxBytes: maxListingBytes) { line in
             entries += 1
             let ns = line as NSString
             guard let m = re.firstMatch(in: line, range: NSRange(location: 0, length: ns.length)),
                   let size = Int64(ns.substring(with: m.range(at: 1))) else {
-                failure = .invalid("无法识别压缩包目录中的条目：\(line.prefix(120))"); return false
+                failure = .invalid(String(localized: "无法识别压缩包目录中的条目：\(line.prefix(120))")); return false
             }
             // A crafted header can declare a size near Int64.max; overflow must reject, not trap.
             let (sum, overflow) = total.addingReportingOverflow(size)
-            if overflow { failure = .invalid("压缩包声明的大小异常"); return false }
+            if overflow { failure = .invalid(String(localized: "压缩包声明的大小异常")); return false }
             total = sum
-            if entries > maxEntries { failure = .invalid("压缩包内文件超过 \(maxEntries) 个"); return false }
-            if total > maxExpandedBytes { failure = .invalid("压缩包解开后超过 \(maxExpandedBytes >> 20) MB 上限"); return false }
+            if entries > maxEntries { failure = .invalid(String(localized: "压缩包内文件超过 \(String(maxEntries)) 个")); return false }
+            if total > maxExpandedBytes { failure = .invalid(String(localized: "压缩包解开后超过 \(String(maxExpandedBytes >> 20)) MB 上限")); return false }
             return true
         }
         if let failure { throw failure }
@@ -78,11 +78,11 @@ enum Archive {
         // Free space is cheap to read, so it is checked every tick; walking the tree costs more and runs
         // once a second. Both are checked again after bsdtar exits.
         func check(walk: Bool) -> String? {
-            guard let free = freeSpace(dir) else { return "无法查询磁盘剩余空间" }
-            if free < minFreeBytes { return "解压时磁盘剩余空间低于 1 GB" }
+            guard let free = freeSpace(dir) else { return String(localized: "无法查询磁盘剩余空间") }
+            if free < minFreeBytes { return String(localized: "解压时磁盘剩余空间低于 1 GB") }
             guard walk else { return nil }
-            guard let used = usage(dir) else { return "无法统计解出的数据量" }
-            return used > limit ? "实际解出的数据超过 \(limit >> 20) MB 上限" : nil
+            guard let used = usage(dir) else { return String(localized: "无法统计解出的数据量") }
+            return used > limit ? String(localized: "实际解出的数据超过 \(String(limit >> 20)) MB 上限") : nil
         }
         var exceeded: String?, tick = 0
         while p.isRunning {
@@ -96,11 +96,11 @@ enum Archive {
         if exceeded == nil { exceeded = check(walk: true) }
         if let exceeded {
             try? FileManager.default.removeItem(at: dir)
-            throw ConvertError.invalid(exceeded + "，已停止并删除解出的内容")
+            throw ConvertError.invalid(exceeded + String(localized: "，已停止并删除解出的内容"))
         }
         guard p.terminationStatus == 0 else {
             let tail = String(decoding: output, as: UTF8.self).split(separator: "\n").suffix(3).joined(separator: " ")
-            throw ConvertError.tool("解压失败（退出码 \(p.terminationStatus)）：\(tail)")
+            throw ConvertError.tool(String(localized: "解压失败（退出码 \(String(p.terminationStatus))）：\(tail)"))
         }
     }
 
@@ -137,7 +137,7 @@ enum Archive {
         try extract(url, to: dir)
         var comic = Comic(title: url.deletingPathExtension().lastPathComponent, pages: Images.collect(in: dir))
         if let big = comic.pages.first(where: { ((try? $0.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? Int.max) > maxPageBytes }) {
-            throw ConvertError.invalid("页面 \(big.lastPathComponent) 超过 \(maxPageBytes >> 20) MB，不像是漫画页")
+            throw ConvertError.invalid(String(localized: "页面 \(big.lastPathComponent) 超过 \(String(maxPageBytes >> 20)) MB，不像是漫画页"))
         }
         ComicInfo.read(from: dir, into: &comic)
         return comic
@@ -168,14 +168,14 @@ enum Archive {
     static func writeTar(_ comic: Comic, format: String, to out: URL, work: URL) throws {
         let dir = work.appendingPathComponent("stage", isDirectory: true)
         let names = try stage(comic, in: dir, comicInfo: true)
-        try runTool(bsdtar, ["--format", format, "-c", "-f", out.path, "-C", dir.path] + names, name: "打包")
+        try runTool(bsdtar, ["--format", format, "-c", "-f", out.path, "-C", dir.path] + names, name: String(localized: "打包"))
     }
 
     static func writeRar(_ comic: Comic, rar: String, to out: URL, work: URL) throws {
         let dir = work.appendingPathComponent("stage", isDirectory: true)
         let names = try stage(comic, in: dir, comicInfo: true)
         // a: add, -m0: store (pages are already compressed), -ep1: drop the staging path, -idq: quiet.
-        try runTool(rar, ["a", "-m0", "-ep1", "-idq", out.path] + names.map { dir.appendingPathComponent($0).path }, name: "RAR 打包")
+        try runTool(rar, ["a", "-m0", "-ep1", "-idq", out.path] + names.map { dir.appendingPathComponent($0).path }, name: String(localized: "RAR 打包"))
     }
 
     static func writeZip(_ comic: Comic, to out: URL) throws {
@@ -197,7 +197,7 @@ final class ZipWriter {
     private let time: Int, date: Int
 
     init(url: URL) throws {
-        guard FileManager.default.createFile(atPath: url.path, contents: nil) else { throw ConvertError.tool("无法创建 \(url.lastPathComponent)") }
+        guard FileManager.default.createFile(atPath: url.path, contents: nil) else { throw ConvertError.tool(String(localized: "无法创建 \(url.lastPathComponent)")) }
         handle = try FileHandle(forWritingTo: url)
         let c = Calendar(identifier: .gregorian).dateComponents([.year, .month, .day, .hour, .minute, .second], from: Date())
         time = c.hour! << 11 | c.minute! << 5 | c.second! / 2
@@ -208,7 +208,7 @@ final class ZipWriter {
         let n = Array(name.utf8)
         // Everything up to the start of the central directory must stay addressable with 32 bits.
         guard count < 0xFFFF, offset + 30 + n.count + data.count < 0xFFFF_FFFF else {
-            throw ConvertError.unsupported("ZIP 输出超过 4 GB 或 65535 个文件")
+            throw ConvertError.unsupported(String(localized: "ZIP 输出超过 4 GB 或 65535 个文件"))
         }
         let crc = data.withUnsafeBytes { Int(crc32(0, $0.bindMemory(to: Bytef.self).baseAddress, uInt($0.count))) }
         var local: [UInt8] = []
@@ -225,7 +225,7 @@ final class ZipWriter {
     }
 
     func finish() throws {
-        guard central.count < 0xFFFF_FFFF else { throw ConvertError.unsupported("ZIP 目录超过 4 GB") }
+        guard central.count < 0xFFFF_FFFF else { throw ConvertError.unsupported(String(localized: "ZIP 目录超过 4 GB")) }
         var end: [UInt8] = []
         end.le32(0x0605_4b50); end.le16(0); end.le16(0); end.le16(count); end.le16(count)
         end.le32(central.count); end.le32(offset); end.le16(0)

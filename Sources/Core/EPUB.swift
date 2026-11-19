@@ -11,17 +11,17 @@ enum EPUBComic {
         let meta = root.appendingPathComponent("META-INF")
         if FileManager.default.fileExists(atPath: meta.appendingPathComponent("rights.xml").path) ||
             ((try? readContained(meta.appendingPathComponent("encryption.xml"), in: root)) ?? "").contains("xmlenc#aes") {
-            throw ConvertError.drm("EPUB 内容已加密")
+            throw ConvertError.drm(String(localized: "EPUB 内容已加密"))
         }
         guard let container = try? readContained(meta.appendingPathComponent("container.xml"), in: root),
               let opfPath = matches("full-path\\s*=\\s*[\"']([^\"']+)[\"']", in: container).first,
               let opfURL = resolve(opfPath, from: root),
-              let opfData = try? readContainedData(opfURL, in: root, limit: 16 << 20) else { throw ConvertError.invalid("EPUB 缺少 OPF 清单") }
+              let opfData = try? readContainedData(opfURL, in: root, limit: 16 << 20) else { throw ConvertError.invalid(String(localized: "EPUB 缺少 OPF 清单")) }
         let opf = OPFParser()
         let parser = XMLParser(data: opfData)
         parser.delegate = opf
         parser.shouldResolveExternalEntities = false
-        guard parser.parse() else { throw ConvertError.invalid("OPF 清单格式错误") }
+        guard parser.parse() else { throw ConvertError.invalid(String(localized: "OPF 清单格式错误")) }
 
         let opfDir = opfURL.deletingLastPathComponent()
         var comic = Comic(title: opf.title ?? url.deletingPathExtension().lastPathComponent, authors: opf.creators,
@@ -53,7 +53,7 @@ enum EPUBComic {
             try data.write(to: page)
             comic.pages.append(page)
         }
-        if fromManifest, !comic.pages.isEmpty { comic.warnings.append("未能从正文确定页序，已按清单顺序排列图片") }
+        if fromManifest, !comic.pages.isEmpty { comic.warnings.append(String(localized: "未能从正文确定页序，已按清单顺序排列图片")) }
         return comic
     }
 

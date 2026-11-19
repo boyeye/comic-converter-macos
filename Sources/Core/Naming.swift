@@ -14,13 +14,13 @@ struct NamingRule: Codable, Equatable {
     var stripBrackets = false
 
     static let tokens: [(token: String, help: String)] = [
-        ("{原名}", "源文件名（去扩展名，已应用查找替换和去括号）"),
-        ("{标题}", "书内元数据中的标题"),
-        ("{作者}", "书内元数据中的作者"),
-        ("{序号}", "按列表顺序编号"),
-        ("{页数}", "页数"),
-        ("{格式}", "输出格式，如 CBZ"),
-        ("{日期}", "转换日期，如 2026-10-30"),
+        (String(localized: "{原名}"), String(localized: "源文件名（去扩展名，已应用查找替换和去括号）")),
+        (String(localized: "{标题}"), String(localized: "书内元数据中的标题")),
+        (String(localized: "{作者}"), String(localized: "书内元数据中的作者")),
+        (String(localized: "{序号}"), String(localized: "按列表顺序编号")),
+        (String(localized: "{页数}"), String(localized: "页数")),
+        (String(localized: "{格式}"), String(localized: "输出格式，如 CBZ")),
+        (String(localized: "{日期}"), String(localized: "转换日期，如 2026-10-30")),
     ]
     private static let aliases = ["{name}": "{原名}", "{title}": "{标题}", "{author}": "{作者}", "{n}": "{序号}",
                                   "{pages}": "{页数}", "{format}": "{格式}", "{date}": "{日期}"]
@@ -34,7 +34,7 @@ struct NamingRule: Codable, Equatable {
     /// nil when the regex is valid (or unused); otherwise a message for the user.
     var regexError: String? {
         guard useRegex, !find.isEmpty else { return nil }
-        do { _ = try NSRegularExpression(pattern: find) } catch { return "正则表达式无效：\(find)" }
+        do { _ = try NSRegularExpression(pattern: find) } catch { return String(localized: "正则表达式无效：\(find)") }
         return nil
     }
 
@@ -61,11 +61,11 @@ struct NamingRule: Codable, Equatable {
         date.dateFormat = "yyyy-MM-dd"
         let values: [String: String] = [
             "{原名}": cleaned(original),
-            "{标题}": comic.map { cleaned($0.title) } ?? "‹标题›",
-            "{作者}": comic.map { $0.authors.joined(separator: "、") } ?? "‹作者›",
+            "{标题}": comic.map { cleaned($0.title) } ?? String(localized: "‹标题›"),
+            "{作者}": comic.map { $0.authors.joined(separator: String(localized: "、")) } ?? String(localized: "‹作者›"),
             "{序号}": String(format: "%0\(digits)d", number),
-            "{页数}": comic.map { String($0.pages.count) } ?? "‹页数›",
-            "{格式}": format == .folder ? "图片" : format.rawValue.uppercased(),
+            "{页数}": comic.map { String($0.pages.count) } ?? String(localized: "‹页数›"),
+            "{格式}": format == .folder ? String(localized: "图片") : format.rawValue.uppercased(),
             "{日期}": date.string(from: Date()),
         ]
         // One pass over the template, so token-like text inside a title or file name stays literal.
@@ -80,7 +80,7 @@ struct NamingRule: Codable, Equatable {
         s += template[last...]
         s = Self.sanitize(s)
         if s.isEmpty { s = Self.sanitize(original) }
-        return s.isEmpty ? "未命名" : s
+        return s.isEmpty ? String(localized: "未命名") : s
     }
 
     /// Makes a string safe as a macOS file name: no path separators or control characters, no leading
